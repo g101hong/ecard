@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>울산 감성 E-Card 서비스</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/animations.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap');
+        .font-handwriting {
+            font-family: 'Nanum Pen Script', cursive;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-svh flex justify-center items-center p-0 sm:p-4">
+
+    <main class="w-full max-w-md bg-white min-h-svh sm:min-h-[850px] sm:rounded-3xl sm:shadow-2xl flex flex-col justify-between overflow-hidden relative border border-slate-100">
+        
+        <section id="image-container" class="w-full aspect-square relative bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-100">
+            
+            <div id="svg-wrapper" class="w-full h-full transition-all duration-1000 ease-in-out">
+                <div id="svg-holder" class="w-full h-full flex items-center justify-center p-0">
+                    
+                    <object 
+                        id="fallback-svg-object"
+                        type="image/svg+xml" 
+                        data="/assets/stained-glass.svg" 
+                        class="w-full h-full object-contain pointer-events-none">
+                        <div id="svg-skeleton" class="flex flex-col items-center space-y-2 text-slate-400">
+                            <div class="w-8 h-8 border-2 border-slate-300 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="text-xs tracking-wider">울산 12경 도안 매핑 중...</p>
+                        </div>
+                    </object>
+
+                </div>
+            </div>
+            
+            <div id="loading-layer" class="hidden absolute inset-0 bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+                <div class="bg-white/90 p-6 rounded-2xl shadow-xl flex flex-col items-center space-y-4 max-w-[80%] text-center">
+                    <div class="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p id="loading-text" class="text-base font-medium text-teal-700 animate-pulse">소감 분석 중...</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="ui-container" class="flex-1 flex flex-col justify-center p-6 bg-gradient-to-b from-white to-slate-50">
+            
+            <form id="input-form" class="w-full flex flex-col space-y-4">
+                <div class="space-y-1">
+                    <label for="impression-input" class="text-sm font-semibold text-slate-600 flex justify-between items-center">
+                        <span>울산 여행은 어떠셨나요?</span>
+                        <span id="char-counter" class="text-xs font-normal text-slate-400">0 / 500자</span>
+                    </label>
+                    <textarea 
+                        id="impression-input" 
+                        name="impression"
+                        rows="4" 
+                        maxlength="500"
+                        placeholder="이곳에 남겨주신 소중한 감상에 따라 상단 스테인드글라스 유리의 빛깔이 다채롭게 채색됩니다. (최소 8자 이상)"
+                        class="w-full p-3.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none shadow-inner transition-all duration-300 placeholder:text-slate-400"
+                        required></textarea>
+                </div>
+                
+                <button 
+                    type="submit" 
+                    class="w-full py-3.5 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-medium rounded-xl shadow-md shadow-teal-500/10 hover:shadow-lg hover:shadow-teal-500/20 active:scale-[0.98] transition-all duration-200 tracking-wide">
+                    나만의 감성 카드 생성하기
+                </button>
+            </form>
+
+            <div id="reply-preview" class="hidden w-full space-y-5 animate-fade-up">
+                <div class="border-l-2 border-teal-500 pl-4 py-1 space-y-3">
+                    <h2 id="reply-main" class="text-3xl text-slate-800 leading-relaxed font-handwriting tracking-wide">
+                        </h2>
+                    <p id="reply-place" class="text-xl text-slate-600 leading-normal font-handwriting">
+                        </p>
+                </div>
+
+                <div class="flex justify-between items-center pt-4 border-t border-slate-100">
+                    <span id="reply-tagline" class="text-xs uppercase tracking-widest text-slate-400 font-semibold">
+                        ULSAN — 당신의 울산
+                    </span>
+                    <button 
+                        id="reset-btn" 
+                        class="text-xs text-slate-400 hover:text-teal-600 font-medium transition-colors duration-200 underline underline-offset-4">
+                        다른 소감 적기
+                    </button>
+                </div>
+            </div>
+
+        </section>
+        
+        <footer class="w-full py-2.5 text-center text-[10px] text-slate-300 font-mono tracking-wider select-none bg-slate-50/50">
+            &copy; 2026 ULSAN METROPOLITAN CITY. ALL RIGHTS RESERVED.
+        </footer>
+    </main>
+
+    <script type="module" src="/js/app.js"></script>
+
+</body>
+</html>
