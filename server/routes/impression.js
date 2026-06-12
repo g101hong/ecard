@@ -62,8 +62,7 @@ import { analyzeImpression }  from '../../emotion-engine/index.js';
 import { collectVisitContext } from '../../reply-engine/visit-context.js';
 import { classify }           from '../../reply-engine/context-classifier.js';
 import { generateReply }      from '../../reply-engine/reply-generator.js';
-import { calculateAllPanelColors,
-         colorTempToFilter }  from '../../svg-engine/color-calculator.js';
+//import { calculateAllPanelColors, colorTempToFilter }  from '../../svg-engine/color-calculator.js';
 
 const router = Router();
 
