@@ -10,7 +10,7 @@ import cors      from 'cors';
 import dotenv    from 'dotenv';
 import path      from 'path';
 import { fileURLToPath } from 'url';
-import { cleanupExpiredFiles } from '../svg-engine/png-exporter.js';
+//import { cleanupExpiredFiles } from '../svg-engine/png-exporter.js';
 
 dotenv.config();
 
