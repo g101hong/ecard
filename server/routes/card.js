@@ -31,8 +31,8 @@
 'use strict';
 
 import { Router } from 'express';
-//import { patchSVG }          from '../../svg-engine/svg-patcher.js';
-//import { svgToPng }          from '../../svg-engine/png-exporter.js';
+import { patchSVG }          from '../../svg-engine/svg-patcher.js';
+import { svgToPng }          from '../../svg-engine/png-exporter.js';
 
 const router = Router();
 
