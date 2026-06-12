@@ -76,9 +76,6 @@ app.listen(PORT, async () => {
 
 // node test/02_gemini_direct.js
 // Gemini API를 서버 없이 직접 호출해서 키·네트워크 연결 확인
-import dotenv from 'dotenv';
-dotenv.config();
-
 const KEY = process.env.GEMINI_API_KEY;
 
 if (!KEY) {
