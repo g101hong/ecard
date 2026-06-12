@@ -71,5 +71,5 @@ app.listen(PORT, async () => {
   console.log(`   Gemini 키: ${process.env.GEMINI_API_KEY ? '설정됨 ✅' : '없음 ❌'}`);
 
   // 서버 시작 시 만료된 PNG 정리
-  await cleanupExpiredFiles();
+  //await cleanupExpiredFiles();
 });
