@@ -20,8 +20,10 @@
  *       │       generateReply(classified, text)
  *       │       → reply { main, place, tagline }
  *       │
- *       ├─ 4. svg-engine.calculateAllPanelColors()
- *       │       → panelColors[12] (클라이언트 SVG에 직접 적용)
+ *       ├─ 4. svg-engine.computeGlobalParams() + colorTempToFilter()
+ *       │       → colorTempFilter (CSS filter 문자열)
+ *       │       (v2: 패널별 색상 계산은 클라이언트가 직접 수행 —
+ *       │        svg-renderer.applyDeltaColorsToSVG(emotionScores, diversitySeed))
  *       │
  *       └─ 5. 통합 응답 반환
  *
@@ -35,9 +37,8 @@
  *     emotionScores,      8차원 감성 점수
  *     primaryEmotion,     핵심 감성 한글
  *     keywords,           감성 키워드 5개
- *     panelColors,        12패널 색상 { 0:{main,sub,acc}, ... }
  *     colorTempFilter,    CSS filter 문자열
- *     diversitySeed,      다양성 시드 (POST /api/card 에 전달)
+ *     diversitySeed,      다양성 시드 (SVG 색채 계산 + POST /api/card 에 전달)
  *     reply {             E-Card 3단 답글
  *       main,
  *       place,
@@ -62,7 +63,7 @@ import { analyzeImpression }  from '../../emotion-engine/index.js';
 import { collectVisitContext } from '../../reply-engine/visit-context.js';
 import { classify }           from '../../reply-engine/context-classifier.js';
 import { generateReply }      from '../../reply-engine/reply-generator.js';
-//import { calculateAllPanelColors, colorTempToFilter }  from '../../svg-engine/color-calculator.js';
+import { computeGlobalParams, colorTempToFilter } from '../../svg-engine/color-calculator.js';
 
 const router = Router();
 
@@ -162,11 +163,12 @@ router.post('/', async (req, res) => {
     };
   }
 
-  // ── 4. SVG 패널 색상 계산 ──────────────────────────────────────
-  // emotion-engine globalParams 기반으로 12패널 색상 계산
-  // (클라이언트에서 SVG radialGradient stop-color 에 직접 적용)
-  const panelColors = calculateAllPanelColors(emotionScores, diversitySeed);
-  const colorTempFilterStr = colorTempToFilter(globalParams?.colorTemp ?? 0);
+  // ── 4. SVG 색채 글로벌 파라미터 계산 ────────────────────────────
+  // v2: 패널별 색상은 클라이언트가 SVG 'spot-XX-N' 요소의 현재 색을
+  // 읽어 color-engine.js(applyDeltaToHex)로 직접 계산하므로,
+  // 서버는 컨테이너 전체에 적용할 colorTempFilter만 계산해 전달한다.
+  const gp = computeGlobalParams(emotionScores);
+  const colorTempFilterStr = colorTempToFilter(gp.colorTemp);
 
   // ── 5. 통합 응답 ───────────────────────────────────────────────
   const processingTimeMs = Date.now() - t0;
@@ -188,8 +190,10 @@ router.post('/', async (req, res) => {
     primaryEmotion:  typography?.primaryEmotion ?? '',
     keywords:        typography?.keywords       ?? [],
 
-    // SVG 색채 데이터 (클라이언트가 SVG에 직접 적용)
-    panelColors,
+    // SVG 색채 데이터
+    // v2: panelColors 없음 — 클라이언트(svg-renderer.applyDeltaColorsToSVG)가
+    // emotionScores + diversitySeed로 SVG 'spot-XX-N' 요소의 현재 색에서
+    // 직접 계산·적용한다.
     colorTempFilter: colorTempFilterStr,
     diversitySeed,
 

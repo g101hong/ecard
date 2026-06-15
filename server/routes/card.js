@@ -17,11 +17,12 @@
  *       ▼
  *   [card.js]
  *       ├─ 입력값 검증
- *       ├─ svg-engine.patchSVG(emotionScores, diversitySeed, reply)
- *       │    → jsdom으로 SVG 색상 교체 + 답글 텍스트 합성
- *       ├─ svg-engine.svgToPng(svgString)
- *       │    → sharp로 1200×1200 PNG 변환 + output/ 저장
- *       └─ { downloadUrl: '/output/{uuid}.png' } 반환
+ *       └─ svg-engine.generateCardPNG({ emotionScores, diversitySeed, outputPath, size, reply })
+ *            ├─ patchSVG(emotionScores, diversitySeed)
+ *            │    → jsdom으로 'spot-XX-N' 요소의 현재 색에 delta 적용 (케이스 B)
+ *            ├─ svgToPng(patchedSvg, outputPath, size, reply)
+ *            │    → sharp로 PNG 변환 + (reply 있으면) 답글 텍스트 합성 + output/ 저장
+ *            └─ { downloadUrl: '/output/{uuid}.png' } 반환
  *
  * ─────────────────────────────────────────────────────────────────
  * 처리시간: 약 0.3 ~ 0.8초
@@ -30,9 +31,12 @@
 
 'use strict';
 
-import { Router } from 'express';
-//import { patchSVG }          from '../../svg-engine/svg-patcher.js';
-//import { svgToPng }          from '../../svg-engine/png-exporter.js';
+import { Router }   from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import path         from 'path';
+import { generateCardPNG } from '../../svg-engine/index.js';
+
+const OUTPUT_DIR = process.env.OUTPUT_DIR || './output';
 
 const router = Router();
 
@@ -121,30 +125,32 @@ router.post('/', async (req, res) => {
   const cleanReply  = sanitizeReply(reply);
   const outputSize  = Math.min(Math.max(parseInt(size, 10) || 1200, 400), 2400);
 
-  // ── 2. SVG 색채 패치 ───────────────────────────────────────────
-  let svgString;
+  // ── 2. SVG 색채 패치 + PNG 변환/저장 (generateCardPNG 단일 호출) ──
+  // v2: patchSVG가 'spot-XX-N' 요소를 자동 탐색하여 현재 색 기준으로
+  // delta를 적용한다 (케이스 B — 원본 SVG 기준, 결정론적·비누적).
+  const fileName   = `${uuidv4()}.png`;
+  const outputPath = path.join(OUTPUT_DIR, fileName);
+
+  let savedPath;
   try {
-    svgString = await patchSVG(scoreResult.cleaned, seed, cleanReply);
+    savedPath = await generateCardPNG({
+      emotionScores: scoreResult.cleaned,
+      diversitySeed: seed,
+      outputPath,
+      size: outputSize,
+      reply: cleanReply,
+    });
   } catch (err) {
-    console.error('[card] SVG 패치 실패:', err.message);
-    return res.status(500).json({ error: `SVG 처리 실패: ${err.message}` });
+    console.error('[card] PNG 생성 실패:', err.message);
+    return res.status(500).json({ error: `PNG 생성 실패: ${err.message}` });
   }
 
-  // ── 3. PNG 변환 및 저장 ────────────────────────────────────────
-  let exportResult;
-  try {
-    exportResult = await svgToPng(svgString, outputSize);
-  } catch (err) {
-    console.error('[card] PNG 변환 실패:', err.message);
-    return res.status(500).json({ error: `PNG 변환 실패: ${err.message}` });
-  }
-
-  // ── 4. 응답 ────────────────────────────────────────────────────
-  console.log(`[card] 생성 완료: ${exportResult.fileName} (${outputSize}px)`);
+  // ── 3. 응답 ────────────────────────────────────────────────────
+  console.log(`[card] 생성 완료: ${fileName} (${outputSize}px)`);
 
   return res.json({
-    downloadUrl: exportResult.downloadUrl,
-    fileName:    exportResult.fileName,
+    downloadUrl: `/output/${path.basename(savedPath)}`,
+    fileName,
     size:        outputSize,
     generatedAt: new Date().toISOString(),
   });
