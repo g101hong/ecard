@@ -1,106 +1,219 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>울산 감성 E-Card 서비스</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/css/main.css">
-    <link rel="stylesheet" href="/css/animations.css">
-    <!--<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/fonts-archive/NanumWaIrDeu/NanumWaIrDeu.css" type="text/css"/>-->
-    <style>
-        /*@import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap');*/
-        @import url('https://cdn.jsdelivr.net/gh/fonts-archive/NanumWaIrDeu/NanumWaIrDeu.css');
-        .font-handwriting {
-            /*font-family: 'Nanum Pen Script', cursive;*/
-            font-family: 'Nanum WalrDeu', cursive;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>울산 감성 E-Card — 빛이 만든 창, 울산 12경</title>
+
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/animations.css">
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-svh flex justify-center items-center p-0 sm:p-4">
+<body>
 
-    <main class="w-full max-w-md bg-white min-h-svh sm:min-h-[850px] sm:rounded-3xl sm:shadow-2xl flex flex-col justify-between overflow-hidden relative border border-slate-100">
-        
-        <section id="image-container" class="w-full aspect-square relative bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-100">
-            
-            <div id="svg-wrapper" class="w-full h-full transition-all duration-1000 ease-in-out filter blur-md brightness-95">
-                <div id="svg-holder" class="w-full h-full flex items-center justify-center p-0">
-                    
-                    <object 
-                        id="fallback-svg-object"
-                        type="image/svg+xml" 
-                        data="/assets/stained-glass.svg" 
-                        class="w-full h-full object-contain pointer-events-none">
-                        <div id="svg-skeleton" class="flex flex-col items-center space-y-2 text-slate-400">
-                            <div class="w-8 h-8 border-2 border-slate-300 border-t-transparent rounded-full animate-spin"></div>
-                            <p class="text-xs tracking-wider">울산 12경 도안 매핑 중...</p>
-                        </div>
-                    </object>
+  <div class="app-frame">
 
-                </div>
+    <!-- ============================================================
+         공통 헤더
+         ============================================================ -->
+    <header class="app-header">
+      <div>
+        <p class="app-header__eyebrow">ULSAN 12 SCENES · E-CARD</p>
+        <h1 class="app-header__title">빛이 만든 창, <span class="accent">나의 울산</span></h1>
+      </div>
+      <button type="button" id="back-btn" class="app-header__back hidden">
+        <span class="icon" aria-hidden="true">←</span>
+        <span>다시 쓰기</span>
+      </button>
+    </header>
+
+    <!-- ============================================================
+         화면 1 — 여행 정보 + 소감문 입력
+         ============================================================ -->
+    <section id="screen-input" class="screen screen--input">
+
+      <div class="intro">
+        <p class="intro__lead">
+          여행의 일정과 동행, 그리고 울산에서 느낀 순간을 들려주세요.
+          소감 속 <strong>감정의 색</strong>이 스테인드글라스 12경에 그대로 입혀집니다.
+        </p>
+      </div>
+
+      <form id="impression-form" class="form" novalidate>
+
+        <!-- 여행일정 -->
+        <div class="field-group">
+          <div class="field-group__label">
+            <span class="field-group__index">01</span>
+            <span class="field-group__title">여행은 며칠이었나요?</span>
+          </div>
+          <div class="chip-grid" id="duration-group">
+            <label class="chip">
+              <input type="radio" name="tripDuration" value="day">
+              <span class="chip__icon" aria-hidden="true">☼</span>
+              <span>당일</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="tripDuration" value="1n2d">
+              <span class="chip__icon" aria-hidden="true">☾</span>
+              <span>1박 2일</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="tripDuration" value="2n3d">
+              <span class="chip__icon" aria-hidden="true">☾☾</span>
+              <span>2박 3일</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="tripDuration" value="3n4d">
+              <span class="chip__icon" aria-hidden="true">☾☾☾</span>
+              <span>3박 4일</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="tripDuration" value="4n+">
+              <span class="chip__icon" aria-hidden="true">✦</span>
+              <span>4박 이상</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 여행동행 -->
+        <div class="field-group">
+          <div class="field-group__label">
+            <span class="field-group__index">02</span>
+            <span class="field-group__title">누구와 함께였나요?</span>
+          </div>
+          <div class="chip-grid" id="companion-group">
+            <label class="chip">
+              <input type="radio" name="companion" value="solo">
+              <span class="chip__icon" aria-hidden="true">●</span>
+              <span>혼자</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="companion" value="family">
+              <span class="chip__icon" aria-hidden="true">◍</span>
+              <span>가족</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="companion" value="friends">
+              <span class="chip__icon" aria-hidden="true">◎</span>
+              <span>친구</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="companion" value="couple">
+              <span class="chip__icon" aria-hidden="true">♥</span>
+              <span>연인</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="companion" value="other">
+              <span class="chip__icon" aria-hidden="true">✺</span>
+              <span>기타</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 소감문 -->
+        <div class="field-group field-group--text">
+          <div class="field-group__label">
+            <span class="field-group__index">03</span>
+            <span class="field-group__title">울산에서의 순간을 들려주세요</span>
+          </div>
+          <div class="textarea-wrap">
+            <textarea
+              id="impression-text"
+              name="impression"
+              maxlength="500"
+              placeholder="예) 간절곶에서 본 새벽 일출이 정말 잊을 수 없었어요. 가족들과 함께 본 하늘이 황금빛으로 물드는 순간, 마음이 뭉클했습니다."
+              required
+            ></textarea>
+            <div class="textarea-meta">
+              <span id="char-count">0 · 8자 이상 입력 후 전송</span>
             </div>
-            
-            <div id="loading-layer" class="hidden absolute inset-0 bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center z-20">
-                <div class="bg-white/90 p-6 rounded-2xl shadow-xl flex flex-col items-center space-y-4 max-w-[80%] text-center">
-                    <div class="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p id="loading-text" class="text-base font-medium text-teal-700 animate-pulse">소감 분석 중...</p>
-                </div>
-            </div>
-        </section>
+          </div>
+          <p id="error-msg" class="error-msg is-hidden" role="alert"></p>
+        </div>
 
-        <section id="ui-container" class="flex-1 flex flex-col justify-center p-6 bg-gradient-to-b from-white to-slate-50">
-            
-            <form id="input-form" class="w-full flex flex-col space-y-4">
-                <div class="space-y-1">
-                    <label for="impression-input" class="text-sm font-semibold text-slate-600 flex justify-between items-center">
-                        <span>울산 여행은 어떠셨나요?</span>
-                        <span id="char-counter" class="text-xs font-normal text-slate-400">0 / 500자</span>
-                    </label>
-                    <textarea 
-                        id="impression-input" 
-                        name="impression"
-                        rows="4" 
-                        maxlength="500"
-                        placeholder="이곳에 남겨주신 소중한 감상에 따라 상단 스테인드글라스 유리의 빛깔이 다채롭게 채색됩니다. (최소 8자 이상)"
-                        class="w-full p-3.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none shadow-inner transition-all duration-300 placeholder:text-slate-400"
-                        required></textarea>
-                </div>
-                
-                <button 
-                    type="submit"
-                    class="w-full py-3.5 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-medium rounded-xl shadow-md shadow-teal-500/10 hover:shadow-lg hover:shadow-teal-500/20 active:scale-[0.98] transition-all duration-200 tracking-wide">
-                    나만의 감성 카드 생성하기
-                </button>
-            </form>
+        <button type="submit" id="submit-btn" class="btn-primary" disabled>
+          <span>나의 E-Card 만들기</span>
+          <span class="icon" aria-hidden="true">→</span>
+        </button>
 
-            <div id="reply-preview" class="hidden w-full space-y-5 animate-fade-up">
-                <div class="border-l-2 border-teal-500 pl-4 py-1 space-y-3">
-                    <h2 id="reply-main" class="text-3xl text-slate-800 leading-relaxed font-handwriting tracking-wide">
-                        </h2>
-                    <p id="reply-place" class="text-xl text-slate-600 leading-normal font-handwriting">
-                        </p>
-                </div>
+      </form>
 
-                <div class="flex justify-between items-center pt-4 border-t border-slate-100">
-                    <span id="reply-tagline" class="text-xs uppercase tracking-widest text-slate-400 font-semibold">
-                        ULSAN — 당신의 울산
-                    </span>
-                    <button 
-                        id="reset-btn" 
-                        class="text-xs text-slate-400 hover:text-teal-600 font-medium transition-colors duration-200 underline underline-offset-4">
-                        다른 소감 적기
-                    </button>
-                </div>
-            </div>
+    </section>
 
-        </section>
-        
-        <footer class="w-full py-2.5 text-center text-[10px] text-slate-300 font-mono tracking-wider select-none bg-slate-50/50">
-            &copy; 2026 ULSAN METROPOLITAN CITY. ALL RIGHTS RESERVED.
-        </footer>
-    </main>
+    <!-- ============================================================
+         화면 2 — 결과 (이미지 상단 + 답글 하단)
+         ============================================================ -->
+    <section id="screen-result" class="screen screen--result is-hidden">
 
-    <script type="module" src="/js/app.js"></script>
+      <div class="result">
 
+        <!-- 상단: 스테인드글라스 이미지 -->
+        <div class="glass-frame">
+          <div id="svg-container" class="blurred" aria-label="감성에 따라 채색된 울산 12경 스테인드글라스"></div>
+
+          <div id="palette-strip" class="palette-strip hidden" aria-label="12경 색상 팔레트"></div>
+
+          <div id="active-spot-label" class="spot-label hidden"></div>
+        </div>
+
+        <!-- 하단: 답글 카드 -->
+        <div class="reply-card">
+
+          <div class="reply-card__meta fade-up">
+            <span class="reply-card__emotion">
+              <span class="dot" aria-hidden="true"></span>
+              <span id="primary-emotion"></span>
+            </span>
+            <div id="keyword-chips" class="keyword-chips" aria-label="감성 키워드"></div>
+          </div>
+
+          <div class="reply-body fade-up">
+            <p id="reply-main" class="reply-body__main"></p>
+            <p id="reply-place" class="reply-body__place"></p>
+          </div>
+
+          <details class="spectrum-details fade-up">
+            <summary class="field-group__title" style="cursor:pointer; font-size:13px;">감성 스펙트럼 보기</summary>
+            <div id="spectrum-bars" class="spectrum" style="margin-top:12px;"></div>
+          </details>
+
+          <div class="result-actions fade-up">
+            <button type="button" id="save-btn" class="btn-secondary">이미지로 저장</button>
+            <button type="button" id="share-btn" class="btn-secondary">공유하기</button>
+          </div>
+
+          <div class="reply-card__footer fade-up">
+            <span id="reply-tagline" class="reply-tagline"></span>
+            <button type="button" id="reset-btn" class="app-header__back">
+              <span>다른 소감 적기</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ============================================================
+         로딩 오버레이 — 색채 분석 중
+         ============================================================ -->
+    <div id="loading-overlay" class="loading-overlay hidden" role="status" aria-live="polite">
+      <div class="glass-loader" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+      <p class="loading-overlay__title">빛을 입히는 중…</p>
+      <p class="loading-overlay__sub" id="loading-text">소감 속 감정을 색으로 풀어내는 중입니다. 잠시만 기다려주세요.</p>
+    </div>
+
+    <footer class="app-footer">
+      &copy; 2026 ULSAN METROPOLITAN CITY. ALL RIGHTS RESERVED.
+    </footer>
+
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
 </body>
 </html>
