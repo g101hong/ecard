@@ -51,6 +51,11 @@ app.get('/api/health', (req, res) => {
 // ── API 라우터 ────────────────────────────────────────────────────
 import apiRouter from './routes/api.js';
 app.use('/api', apiRouter);
+// ── 테스트용 ────────────────────────────────────────────────────
+import testRoutes from './routes/test.js';
+if (process.env.NODE_ENV === 'development') {
+  app.use('/api/test', testRoutes);
+}
 
 // ── SPA 폴백 (모든 미매칭 GET → index.html) ───────────────────────
 app.get('*', (req, res) => {
