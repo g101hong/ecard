@@ -1,0 +1,814 @@
+/**
+ * @fileoverview public/css/main.css
+ * @description 울산 E-Card — 메인 스타일시트
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 디자인 콘셉트: "빛이 만든 창 (울산 12경 스테인드글라스)"
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   화면 전체를 깊은 밤의 어둠으로 두고, 그 위에 울산 12경을 담은
+ *   스테인드글라스 창이 빛을 뿜는 구조. 입력 화면(화면 1)은
+ *   12개의 '빛 조각' 선택 칩으로 구성해 스테인드글라스 패널을
+ *   미리 체험하는 듯한 느낌을 주고, 결과 화면(화면 2)은 실제
+ *   창이 완성되어 빛나는 장면 + 손글씨 답장으로 마무리한다.
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 색채 토큰 (emotion-engine/spots.js 팔레트에서 추출)
+ * ─────────────────────────────────────────────────────────────────
+ *   --ink      : #14110F  바탕 — 깊은 밤 / 창틀 너머의 어둠
+ *   --ink-2    : #1F1A16  카드/패널 배경 — 살짝 밝은 어둠
+ *   --line     : #36302A  경계선 — 창틀의 그림자
+ *   --paper    : #F4ECE0  종이/카드 — 따뜻한 모래빛 (답글 카드)
+ *   --ember    : #FF6635  간절곶 일출 — 핵심 액센트(빛)
+ *   --amber    : #FFB347  여명 황금 — 보조 액센트(빛 번짐)
+ *   --teal     : #0B5EA8  장생포 고래 — 차가운 보색
+ *   --pine     : #2A6640  대왕암 해송 — 깊은 녹색 (포인트)
+ *   --text-hi  : #F4ECE0  주요 텍스트 (어두운 배경 위)
+ *   --text-lo  : #9A8F84  보조 텍스트
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 타이포그래피
+ * ─────────────────────────────────────────────────────────────────
+ *   --font-display : 'Black Han Sans'  — 헤드라인 (한국적 인장·각인 느낌)
+ *   --font-body    : 'Pretendard', 'Noto Sans KR' — 본문/UI
+ *   --font-hand    : 'Nanum WalrDeu' — 손글씨 답글 (기존 자산 유지)
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+@import url('https://cdn.jsdelivr.net/gh/fonts-archive/NanumWaIrDeu/NanumWaIrDeu.css');
+
+/* ============================================================= */
+/* 1. 토큰 & 리셋                                                  */
+/* ============================================================= */
+
+:root {
+  /* 색채 토큰 */
+  --ink:      #14110F;
+  --ink-2:    #1F1A16;
+  --ink-3:    #2A231D;
+  --line:     #3A332C;
+  --paper:    #F4ECE0;
+  --paper-2:  #E8DCC8;
+
+  --ember:    #FF6635;
+  --amber:    #FFB347;
+  --teal:     #1B7FB0;
+  --pine:     #2A6640;
+
+  --text-hi:  #F4ECE0;
+  --text-lo:  #A89B8C;
+  --text-faint: #6E635A;
+
+  /* 타이포 */
+  --font-display: 'Black Han Sans', 'Noto Sans KR', sans-serif;
+  --font-body:    'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
+  --font-hand:    'Nanum WalrDeu', 'Noto Sans KR', cursive;
+
+  /* 형태 */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+
+  /* 음영 */
+  --shadow-glow: 0 0 60px -10px rgba(255, 102, 53, 0.35);
+  --shadow-card: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+
+  /* 레이아웃 */
+  --frame-max: 480px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--ink);
+  color: var(--text-hi);
+  min-height: 100svh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+textarea {
+  font-family: inherit;
+}
+
+/* 포커스 가시성 — 키보드 내비게이션 */
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ============================================================= */
+/* 2. 배경 — 별빛 / 빛 번짐 앰비언트                                */
+/* ============================================================= */
+
+body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255, 102, 53, 0.16), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(27, 127, 176, 0.12), transparent 60%),
+    var(--ink);
+  background-attachment: fixed;
+}
+
+/* ============================================================= */
+/* 3. 앱 프레임 (모바일 카드 컨테이너)                              */
+/* ============================================================= */
+
+.app-frame {
+  position: relative;
+  width: 100%;
+  max-width: var(--frame-max);
+  min-height: 100svh;
+  background: var(--ink-2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+@media (min-width: 540px) {
+  .app-frame {
+    min-height: min(900px, 100svh);
+    margin: 24px 0;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--line);
+  }
+}
+
+/* ============================================================= */
+/* 4. 헤더 — 공통 상단 바                                          */
+/* ============================================================= */
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-header__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.app-header__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--text-hi);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+.app-header__title .accent {
+  color: var(--ember);
+}
+
+.app-header__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-lo);
+  padding: 8px 14px;
+  margin-top: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.app-header__back:hover {
+  color: var(--text-hi);
+  border-color: var(--amber);
+  background: rgba(255, 179, 71, 0.08);
+}
+
+.app-header__back .icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ============================================================= */
+/* 5. 화면 컨테이너 — 화면1 / 화면2 토글                            */
+/* ============================================================= */
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.screen.is-hidden {
+  display: none;
+}
+
+/* ============================================================= */
+/* 6. 화면 1 — 입력 폼                                             */
+/* ============================================================= */
+
+.intro {
+  padding: 28px 24px 8px;
+}
+
+.intro__lead {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-lo);
+}
+
+.intro__lead strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 24px 28px;
+}
+
+/* ── 필드 그룹 (여행일정 / 동행) ─────────────────────────────── */
+
+.field-group__label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.field-group__index {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--ember);
+  letter-spacing: 0.05em;
+}
+
+.field-group__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-hi);
+}
+
+.field-group__hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+/* ── 선택 칩 — '빛 조각' 스타일 ──────────────────────────────── */
+
+.chip-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ink-3);
+  color: var(--text-lo);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.3;
+  transition: border-color 0.2s ease, color 0.2s ease,
+              background 0.2s ease, box-shadow 0.25s ease,
+              transform 0.15s ease;
+  overflow: hidden;
+}
+
+.chip__icon {
+  font-size: 18px;
+  line-height: 1;
+  filter: grayscale(1) brightness(0.9);
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.chip:hover {
+  border-color: var(--text-lo);
+  color: var(--text-hi);
+  transform: translateY(-1px);
+}
+
+.chip:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* 선택된 칩 — 빛이 들어온 유리 조각 */
+.chip.is-selected {
+  border-color: var(--ember);
+  color: var(--text-hi);
+  background:
+    linear-gradient(160deg, rgba(255, 102, 53, 0.22), rgba(255, 179, 71, 0.08)),
+    var(--ink-3);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 179, 71, 0.35),
+    0 0 18px -4px rgba(255, 102, 53, 0.55);
+}
+
+.chip.is-selected .chip__icon {
+  filter: none;
+  transform: scale(1.08);
+}
+
+/* 라디오 입력은 접근성을 위해 시각적으로만 숨김 */
+.chip input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.chip:focus-within {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ── 소감문 입력 ──────────────────────────────────────────────── */
+
+.field-group--text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.textarea-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+#impression-text {
+  flex: 1;
+  min-height: 140px;
+  resize: vertical;
+  padding: 16px;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--text-hi);
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#impression-text::placeholder {
+  color: var(--text-faint);
+}
+
+#impression-text:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(255, 179, 71, 0.12);
+  outline: none;
+}
+
+.textarea-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+/* ── 오류 메시지 ──────────────────────────────────────────────── */
+
+.error-msg {
+  font-size: 13px;
+  color: var(--ember);
+  background: rgba(255, 102, 53, 0.1);
+  border: 1px solid rgba(255, 102, 53, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  line-height: 1.5;
+}
+
+.error-msg.is-hidden,
+.is-hidden,
+.hidden {
+  display: none !important;
+}
+
+/* ── 제출 버튼 ────────────────────────────────────────────────── */
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  background: linear-gradient(135deg, var(--amber), var(--ember));
+  border-radius: 999px;
+  box-shadow: 0 12px 32px -10px rgba(255, 102, 53, 0.55);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px -10px rgba(255, 102, 53, 0.65);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-primary .icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ============================================================= */
+/* 7. 화면 2 — 결과(이미지 + 답글)                                  */
+/* ============================================================= */
+
+.result {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 스테인드글라스 이미지 영역 (상단) ───────────────────────── */
+
+.glass-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--ink);
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+
+#svg-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#svg-container svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 빛이 번지는 비네트 오버레이 */
+.glass-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 40%, transparent 55%, rgba(20, 17, 15, 0.55) 100%);
+}
+
+/* 경승지 라벨 */
+.spot-label {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-hi);
+  background: rgba(20, 17, 15, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+/* 팔레트 스트립 */
+.palette-strip {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.palette-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.palette-chip:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
+}
+
+/* ── 답글 카드 (하단) ─────────────────────────────────────────── */
+
+.reply-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px 24px 24px;
+  background:
+    linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
+}
+
+.reply-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reply-card__emotion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  text-transform: uppercase;
+}
+
+.reply-card__emotion .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 0 4px rgba(255, 102, 53, 0.18);
+}
+
+.keyword-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.keyword-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-lo);
+  background: var(--ink-3);
+}
+
+/* 손글씨 답글 */
+.reply-body {
+  position: relative;
+  padding: 20px 0 4px;
+  border-top: 1px dashed var(--line);
+}
+
+.reply-body__main {
+  font-family: var(--font-hand);
+  font-size: 28px;
+  line-height: 1.45;
+  color: var(--text-hi);
+  letter-spacing: 0.01em;
+}
+
+.reply-body__place {
+  margin-top: 8px;
+  font-family: var(--font-hand);
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--text-lo);
+}
+
+.reply-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.reply-tagline {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── 감성 스펙트럼 ────────────────────────────────────────────── */
+
+.spectrum {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spectrum-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-lo);
+}
+
+.spectrum-row.dominant {
+  color: var(--text-hi);
+  font-weight: 700;
+}
+
+.spectrum-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  overflow: hidden;
+}
+
+.spectrum-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--teal), var(--amber), var(--ember));
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spectrum-row.dominant .spectrum-bar-fill {
+  box-shadow: 0 0 10px rgba(255, 102, 53, 0.5);
+}
+
+.spectrum-score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* ── 결과 액션 버튼 ───────────────────────────────────────────── */
+
+.result-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-secondary {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 16px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-hi);
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--amber);
+  background: rgba(255, 179, 71, 0.08);
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================= */
+/* 8. 로딩 오버레이                                                */
+/* ============================================================= */
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(20, 17, 15, 0.82);
+  backdrop-filter: blur(4px);
+  text-align: center;
+  padding: 24px;
+}
+
+.loading-overlay__title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--text-hi);
+}
+
+.loading-overlay__sub {
+  font-size: 13px;
+  color: var(--text-lo);
+  max-width: 280px;
+  line-height: 1.6;
+}
+
+/* 스테인드글라스 조각이 맞춰지는 로더 */
+.glass-loader {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.glass-loader span {
+  border-radius: 3px;
+  background: var(--ink-3);
+}
+
+/* ============================================================= */
+/* 9. 푸터                                                         */
+/* ============================================================= */
+
+.app-footer {
+  padding: 14px 24px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  border-top: 1px solid var(--line);
+}
+
+/* ============================================================= */
+/* 10. 반응형 미세 조정                                            */
+/* ============================================================= */
+
+@media (max-width: 360px) {
+  .chip-grid {
+    gap: 6px;
+  }
+  .chip {
+    font-size: 11px;
+    padding: 10px 2px 8px;
+  }
+  .reply-body__main {
+    font-size: 24px;
+  }
+}
