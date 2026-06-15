@@ -35,6 +35,8 @@ function sanitizeString(str) {
 }
 
 const VALID_LANGUAGES = ['ko', 'en', 'ja', 'zh'];
+const VALID_TRIP_DURATIONS = ['day', '1n2d', '2n3d', '3n4d', '4n+'];
+const VALID_COMPANIONS     = ['solo', 'family', 'friends', 'couple', 'other'];
 const EMOTION_KEYS    = [
   'amazement','peace','vitality','nostalgia',
   'freshness','grandeur','warmth','mystery',
@@ -56,7 +58,7 @@ const EMOTION_KEYS    = [
  * 통과 시 req.validated = { text, language } 설정
  */
 export function validateImpression(req, res, next) {
-  const { text, language } = req.body;
+  const { text, language, tripDuration, companion } = req.body;
 
   // text 타입 확인
   if (typeof text !== 'string') {
@@ -82,8 +84,14 @@ export function validateImpression(req, res, next) {
   const lang = typeof language === 'string' && VALID_LANGUAGES.includes(language)
     ? language : 'ko';
 
+  // tripDuration / companion 검증 (없거나 잘못된 값이면 null)
+  const trip = typeof tripDuration === 'string' && VALID_TRIP_DURATIONS.includes(tripDuration)
+    ? tripDuration : null;
+  const comp = typeof companion === 'string' && VALID_COMPANIONS.includes(companion)
+    ? companion : null;
+
   // 검증된 값을 req.validated 에 저장
-  req.validated = { text: cleaned, language: lang };
+  req.validated = { text: cleaned, language: lang, tripDuration: trip, companion: comp };
   next();
 }
 
