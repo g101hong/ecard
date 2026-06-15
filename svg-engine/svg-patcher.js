@@ -1,20 +1,26 @@
 /**
  * @fileoverview 울산 E-Card SVG 색채 조정 엔진 — 서버사이드 SVG 패치 모듈
  * @module svg-engine/svg-patcher
- * @version 1.0.0
+ * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * 역할
+ * v2 변경 사항
  * ─────────────────────────────────────────────────────────────────
  *
- *   assets/stained-glass.svg 원본 파일을 jsdom으로 읽어
- *   color-calculator.js가 계산한 12패널 색상(main/sub/acc)을
- *   각 그라디언트 <stop> 요소의 stop-color 속성에 직접 패치한다.
+ *   v1: grad-spot-XX-{main,sub,acc} 고정 3개 id를 찾아 stop-color만 변경
+ *       + color-calculator.BASE_PALETTES 상수 기준으로 색상 계산
  *
- *   이 모듈은 PNG 저장(POST /api/card) 경로에서만 사용된다.
- *   브라우저 미리보기는 public/js/svg-renderer.js가
- *   동일한 색상 데이터로 동일한 ID에 직접 DOM 조작하므로
- *   서버 출력(PNG)과 클라이언트 화면이 100% 일치한다.
+ *   v2:
+ *     ① id 형식: 'spot-{XX}-{N}'  (XX: 00~11, N: 1,2,3... 가변)
+ *        - main/sub/acc 같은 역할 구분 없음
+ *        - 패널(XX)당 색상 요소 개수는 SVG에서 자동 탐색
+ *          (querySelectorAll('[id^="spot-XX-"]'))
+ *     ② 대상 요소가 <stop>이면 stop-color, 그 외(path/circle/rect 등)면
+ *        fill 속성을 읽고 쓴다
+ *     ③ "SVG 현재 색상 기준" (케이스 B):
+ *        - 매 요청마다 assets/stained-glass.svg *원본*을 새로 읽음
+ *        - 그 안에 기록된 현재 fill/stop-color 값을 출발점(HSL)으로 사용
+ *        - 원본 파일은 절대 덮어쓰지 않음 → 결과 결정론적, 누적 변경 없음
  *
  * ─────────────────────────────────────────────────────────────────
  * 파이프라인 내 위치
@@ -24,10 +30,11 @@
  *         │
  *         ▼
  *   patchSVG(emotionScores, diversitySeed)   ← 이 모듈
- *     ├─ assets/stained-glass.svg 읽기 (fs/promises)
- *     ├─ jsdom으로 DOM 파싱
- *     ├─ color-calculator.calculateAllPanelColors() 호출
- *     ├─ 12개 패널 × 3개 stop(main/sub/acc) → stop-color 패치
+ *     ├─ assets/stained-glass.svg 읽기 (원본, 항상 캐시/디스크에서)
+ *     ├─ jsdom으로 DOM 파싱 (요청마다 새 인스턴스)
+ *     ├─ color-calculator.computeGlobalParams() 호출
+ *     ├─ 패널(spot-00~11)별 'spot-{XX}-{N}' 요소를 모두 탐색
+ *     ├─ 각 요소의 현재 fill/stop-color → applyDeltaToHex() → 재적용
  *     └─ dom.serialize() → 패치된 SVG 문자열 반환
  *         │
  *         ▼
@@ -37,43 +44,40 @@
  *   /output/{uuid}.png
  *
  * ─────────────────────────────────────────────────────────────────
- * SVG ID 체계 (경승지별_ID_및_채색방법.txt 기준)
+ * SVG ID 체계 (spot-XX-N, 경승지별_ID_및_채색방법.txt 기준 XX)
  * ─────────────────────────────────────────────────────────────────
  *
- *   color-calculator.calculateAllPanelColors() 반환 배열은
- *   emotion-engine 인덱스(0~11) 순서이며, 각 항목에 svgId가 포함된다:
+ *   - XX: '00' ~ '11' (경승지별_ID_및_채색방법.txt 매핑 기준 SVG spot 번호)
+ *   - N : 1, 2, 3 ... (패널당 색상 요소 개수, 가변, 0개 이상)
+ *   - 예) spot-04-1, spot-04-2, spot-04-3 (간절곶 일출, 요소 3개)
  *
- *     colors[0]  → { index:0, svgId:'spot-04', name:'간절곶 일출', main, sub, acc }
- *     colors[9]  → { index:9, svgId:'spot-00', name:'태화강 ...',  main, sub, acc }
- *
- *   emotion-engine 인덱스와 SVG spot 번호의 순서가 다르므로
- *   반드시 colors[i].svgId 를 사용해 그라디언트 ID를 조회해야 한다.
- *   (colors[i] 의 i 를 그대로 spot-XX 번호로 쓰면 매핑이 틀어진다)
- *
- *   그라디언트 stop ID 패턴:
- *     grad-{svgId}-main  예) grad-spot-04-main
- *     grad-{svgId}-sub   예) grad-spot-04-sub
- *     grad-{svgId}-acc   예) grad-spot-04-acc
+ *   color-calculator.SVG_ID_MAP[emotionIdx] 가 emotion-engine 인덱스(0~11)를
+ *   SVG spot-XX 문자열('spot-04' 등)로 변환한다.
  *
  * ─────────────────────────────────────────────────────────────────
  * jsdom 사용 이유
  * ─────────────────────────────────────────────────────────────────
  *
  *   sharp는 SVG 문자열을 입력받아 PNG로 래스터라이즈할 수 있지만
- *   SVG 내부 요소(<stop> 속성)를 직접 조작하는 기능은 없다.
- *   jsdom으로 DOM을 파싱 → getElementById로 속성 변경 →
+ *   SVG 내부 요소(stop-color/fill 속성)를 직접 조작하는 기능은 없다.
+ *   jsdom으로 DOM을 파싱 → querySelectorAll + getAttribute/setAttribute →
  *   dom.serialize()로 다시 문자열화하는 흐름이 필요하다.
  *
  *   클라이언트(svg-renderer.js)는 이미 브라우저 DOM이므로
- *   동일한 getElementById + setAttribute 패턴을 그대로 사용하며
+ *   동일한 querySelectorAll + getAttribute/setAttribute 패턴을 사용하며
  *   결과적으로 서버·클라이언트의 색상 패치 로직이 대칭을 이룬다.
  */
 
 'use strict';
 
-import { readFile }                from 'fs/promises';
-import { JSDOM }                   from 'jsdom';
-import { calculateAllPanelColors } from './color-calculator.js';
+import { readFile }              from 'fs/promises';
+import { JSDOM }                 from 'jsdom';
+import {
+  computeGlobalParams,
+  applyDeltaToHex,
+  SVG_ID_MAP,
+  SPOT_NAMES,
+} from './color-calculator.js';
 
 // =============================================================================
 // ① 설정 상수
@@ -85,8 +89,17 @@ import { calculateAllPanelColors } from './color-calculator.js';
  */
 const SVG_SOURCE_PATH = './assets/stained-glass.svg';
 
-/** stop-color를 패치할 색상 역할 3종 */
-const COLOR_ROLES = ['main', 'sub', 'acc'];
+/**
+ * 색상 속성을 읽고 쓸 때 사용하는 태그별 속성명.
+ * <stop> 요소는 stop-color, 그 외(path/circle/rect/ellipse/polygon 등)는 fill.
+ */
+const COLOR_ATTR_BY_TAG = {
+  stop: 'stop-color',
+};
+const DEFAULT_COLOR_ATTR = 'fill';
+
+/** hex 색상 형식 검증 ('#RRGGBB' 또는 '#RGB') */
+const HEX_RE = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/;
 
 // =============================================================================
 // ② SVG 원본 캐시
@@ -97,6 +110,10 @@ const COLOR_ROLES = ['main', 'sub', 'acc'];
  * 동일 파일을 매 요청마다 디스크에서 읽지 않도록 메모리에 보관한다.
  * 패치는 항상 이 원본 텍스트의 복사본(JSDOM 새 인스턴스)에 적용되므로
  * 캐시를 공유해도 요청 간 색상이 섞이지 않는다.
+ *
+ * 케이스 B(SVG 현재 색상 기준)의 핵심: 이 캐시는 *원본* 텍스트이며
+ * 패치 결과로 갱신되지 않는다. 따라서 "현재 색상"은 항상 원본의
+ * 고정값을 가리키고, 결과는 결정론적이며 누적 변경이 없다.
  *
  * @type {string|null}
  */
@@ -131,24 +148,63 @@ export function clearSvgCache() {
 }
 
 // =============================================================================
-// ③ 메인 패치 함수 (퍼블릭 API)
+// ③ 색상 속성 읽기/쓰기 헬퍼
 // =============================================================================
 
 /**
- * 감성 점수와 다양성 시드를 받아 SVG의 12패널 색상을 패치하고
+ * 요소의 태그 종류에 따라 색상이 저장된 속성명을 반환한다.
+ * <stop> → 'stop-color', 그 외 → 'fill'
+ *
+ * @param {Element} el
+ * @returns {string}
+ */
+function _colorAttrName(el) {
+  const tag = el.tagName.toLowerCase();
+  return COLOR_ATTR_BY_TAG[tag] ?? DEFAULT_COLOR_ATTR;
+}
+
+/**
+ * 요소의 현재 색상값을 읽는다. hex 형식('#RRGGBB')이 아니면 null.
+ *
+ * @param {Element} el
+ * @returns {{ attr:string, hex:string }|null}
+ */
+function _readColor(el) {
+  const attr = _colorAttrName(el);
+  const val  = el.getAttribute(attr);
+
+  if (!val || !HEX_RE.test(val.trim())) return null;
+
+  let hex = val.trim();
+  // 3자리 단축 hex('#RGB') → 6자리로 확장
+  if (hex.length === 4) {
+    hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+  }
+
+  return { attr, hex };
+}
+
+// =============================================================================
+// ④ 메인 패치 함수 (퍼블릭 API)
+// =============================================================================
+
+/**
+ * 감성 점수와 다양성 시드를 받아 SVG의 'spot-{XX}-{N}' 요소들을 패치하고
  * 직렬화된 SVG 문자열을 반환한다.
  *
  * [처리 흐름]
- *   1. assets/stained-glass.svg 원본 텍스트 로드 (캐시됨)
+ *   1. assets/stained-glass.svg 원본 텍스트 로드 (캐시됨, 항상 원본)
  *   2. jsdom으로 새 DOM 인스턴스 생성 (요청마다 독립)
- *   3. color-calculator.calculateAllPanelColors() 로 12패널 색상 계산
- *   4. 각 패널의 svgId를 이용해 grad-{svgId}-{main,sub,acc} 요소를
- *      getElementById로 찾아 stop-color 속성 변경
+ *   3. color-calculator.computeGlobalParams() 로 글로벌 파라미터 계산
+ *   4. emotion-engine 인덱스(0~11) 순회:
+ *        svgSpot = SVG_ID_MAP[i]  (예: 'spot-04')
+ *        [id^="spot-04-"] 패턴으로 해당 패널의 모든 색상 요소를 탐색
+ *        각 요소의 현재 fill/stop-color → applyDeltaToHex() → 재적용
  *   5. dom.serialize() 로 패치된 SVG 문자열 반환
  *
- * 누락된 그라디언트 stop은 조용히 건너뛴다(?.setAttribute) —
- * SVG 자체에 결함이 있어도 PNG 생성 파이프라인이 중단되지 않는다.
- * 단, 누락 발생 시 console.warn으로 로그를 남긴다.
+ * 패널에 해당 id 요소가 하나도 없으면 조용히 건너뛴다 — SVG 자산이
+ * 아직 'spot-XX-N' id로 보완되지 않은 상태에서도 파이프라인이
+ * 중단되지 않는다. 누락 발생 시 console.warn으로 로그를 남긴다.
  *
  * @param {Object} emotionScores
  *   { amazement:0~100, peace:0~100, vitality:0~100, nostalgia:0~100,
@@ -164,8 +220,6 @@ export function clearSvgCache() {
  *     freshness:60, grandeur:75, warmth:85, mystery:25 },
  *   142857,
  * );
- * // → '<?xml version="1.0"?><svg ...>...
- * //      <stop id="grad-spot-04-main" stop-color="#FF7A4F"/>...</svg>'
  *
  * // png-exporter.js 에 전달
  * await svgToPng(svg, './output/card.png', 1200, reply);
@@ -173,38 +227,49 @@ export function clearSvgCache() {
 export async function patchSVG(emotionScores, diversitySeed) {
   const t0 = Date.now();
 
-  // ── STEP 1: 원본 SVG 로드 ─────────────────────────────────────
+  // ── STEP 1: 원본 SVG 로드 (항상 원본 — 케이스 B) ────────────────
   const rawSvg = await _loadSvgSource();
 
   // ── STEP 2: jsdom DOM 파싱 (요청마다 독립 인스턴스) ─────────────
   const dom = new JSDOM(rawSvg, { contentType: 'image/svg+xml' });
   const doc = dom.window.document;
 
-  // ── STEP 3: 12패널 색상 계산 ─────────────────────────────────────
-  const colors = calculateAllPanelColors(emotionScores, diversitySeed);
+  // ── STEP 3: 글로벌 색채 파라미터 계산 ─────────────────────────────
+  const gp = computeGlobalParams(emotionScores ?? {});
 
-  // ── STEP 4: stop-color 패치 ───────────────────────────────────────
-  const missing = [];
+  // ── STEP 4: 패널별 'spot-{XX}-{N}' 요소 탐색 및 패치 ────────────────
+  const emptyPanels = [];
+  let totalElements = 0;
+  let totalSkipped  = 0;
 
-  for (const panel of colors) {
-    const svgId = panel.svgId; // 예: 'spot-04' (간절곶, emotion idx 0)
+  for (let emotionIdx = 0; emotionIdx <= 11; emotionIdx++) {
+    const svgSpot = SVG_ID_MAP[emotionIdx]; // 예: 'spot-04'
 
-    for (const role of COLOR_ROLES) {
-      const stopId = `grad-${svgId}-${role}`;
-      const stopEl = doc.getElementById(stopId);
+    // [id^="spot-04-"] 패턴으로 패널 내 모든 색상 요소를 자동 탐색 (가변 개수)
+    const elements = doc.querySelectorAll(`[id^="${svgSpot}-"]`);
 
-      if (stopEl) {
-        stopEl.setAttribute('stop-color', panel[role]);
-      } else {
-        missing.push(stopId);
-      }
+    if (elements.length === 0) {
+      emptyPanels.push(svgSpot);
+      continue;
     }
+
+    elements.forEach((el) => {
+      const current = _readColor(el);
+      if (!current) {
+        totalSkipped++;
+        return; // hex 형식이 아니면 건너뜀 (예: fill="none", url(#...) 등)
+      }
+
+      const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
+      el.setAttribute(current.attr, newHex);
+      totalElements++;
+    });
   }
 
-  if (missing.length > 0) {
+  if (emptyPanels.length > 0) {
     console.warn(
-      `[svg-patcher] 누락된 그라디언트 stop ${missing.length}개:`,
-      missing.join(', '),
+      `[svg-patcher] 색상 요소가 없는 패널 ${emptyPanels.length}개:`,
+      emptyPanels.join(', '),
     );
   }
 
@@ -213,8 +278,9 @@ export async function patchSVG(emotionScores, diversitySeed) {
 
   console.info(
     `[svg-patcher] SVG 패치 완료 | ` +
-    `패널 ${colors.length}개 | ` +
-    `누락 ${missing.length}개 | ` +
+    `패치 요소 ${totalElements}개 | ` +
+    `건너뜀 ${totalSkipped}개 | ` +
+    `빈 패널 ${emptyPanels.length}개 | ` +
     `${Date.now() - t0}ms`,
   );
 
@@ -222,39 +288,50 @@ export async function patchSVG(emotionScores, diversitySeed) {
 }
 
 // =============================================================================
-// ④ 디버그 유틸리티
+// ⑤ 디버그 유틸리티
 // =============================================================================
 
 /**
- * 원본 SVG에 12패널 × 3색 그라디언트 stop이 모두 존재하는지 점검한다.
- * 배포 전 SVG 자산 검증용.
+ * 원본 SVG에 12경 각 패널(spot-00 ~ spot-11)의 'spot-XX-N' 색상 요소가
+ * 몇 개씩 존재하는지 점검한다. 배포 전 SVG 자산 검증용.
  *
- * @returns {Promise<{ valid:boolean, missing:string[], total:number }>}
+ * @returns {Promise<{
+ *   valid: boolean,
+ *   total: number,
+ *   panels: Array<{ svgId:string, name:string, count:number, ids:string[] }>,
+ *   emptyPanels: string[],
+ * }>}
  *
  * @example
- * const { valid, missing } = await validateSvgAssets();
- * if (!valid) console.warn('SVG 자산에 누락된 ID:', missing);
+ * const { valid, panels, emptyPanels } = await validateSvgAssets();
+ * if (!valid) console.warn('색상 요소가 없는 패널:', emptyPanels);
  */
 export async function validateSvgAssets() {
   const rawSvg = await _loadSvgSource();
   const dom    = new JSDOM(rawSvg, { contentType: 'image/svg+xml' });
   const doc    = dom.window.document;
 
-  const missing = [];
-  let   total   = 0;
+  const panels = [];
+  const emptyPanels = [];
+  let total = 0;
 
-  for (let i = 0; i <= 11; i++) {
-    const svgId = `spot-${String(i).padStart(2, '0')}`;
-    for (const role of COLOR_ROLES) {
-      total++;
-      const stopId = `grad-${svgId}-${role}`;
-      if (!doc.getElementById(stopId)) {
-        missing.push(stopId);
-      }
-    }
+  for (let emotionIdx = 0; emotionIdx <= 11; emotionIdx++) {
+    const svgSpot = SVG_ID_MAP[emotionIdx];
+    const elements = doc.querySelectorAll(`[id^="${svgSpot}-"]`);
+    const ids = Array.from(elements).map((el) => el.id);
+
+    if (ids.length === 0) emptyPanels.push(svgSpot);
+    total += ids.length;
+
+    panels.push({
+      svgId: svgSpot,
+      name:  SPOT_NAMES[emotionIdx],
+      count: ids.length,
+      ids,
+    });
   }
 
-  return { valid: missing.length === 0, missing, total };
+  return { valid: emptyPanels.length === 0, total, panels, emptyPanels };
 }
 
 /**
@@ -268,29 +345,27 @@ export async function validateSvgAssets() {
  */
 export async function debugPrintPatch(emotionScores, diversitySeed) {
   /* eslint-disable no-console */
-  const colors = calculateAllPanelColors(emotionScores, diversitySeed);
+  const { valid, total, panels, emptyPanels } = await validateSvgAssets();
 
-  console.group('🩹 svg-patcher — 패치 대상 매핑');
+  console.group('🩹 svg-patcher — spot-XX-N 자산 현황');
   console.log(
-    ' E-idx │ SVG ID  │ 경승지                   │ main     │ sub      │ acc',
+    ' E-idx │ SVG ID  │ 경승지                   │ 요소 개수 │ ids',
   );
   console.log(
-    '───────┼─────────┼──────────────────────────┼──────────┼──────────┼──────────',
+    '───────┼─────────┼──────────────────────────┼──────────┼──────────',
   );
 
-  for (const p of colors) {
+  panels.forEach((p, i) => {
     const name = p.name.padEnd(24);
     console.log(
-      `  ${String(p.index).padStart(2)}   │ ${p.svgId} │ ${name} │ ` +
-      `${p.main} │ ${p.sub} │ ${p.acc}`,
+      `  ${String(i).padStart(2)}   │ ${p.svgId} │ ${name} │ ` +
+      `${String(p.count).padStart(8)} │ ${p.ids.join(', ') || '(없음)'}`,
     );
-  }
+  });
 
-  const { valid, missing, total } = await validateSvgAssets();
   console.log('');
-  console.log(`SVG 자산 검증: ${total - missing.length}/${total}`,
-    valid ? '✅ 모두 존재' : `❌ 누락: ${missing.join(', ')}`);
-
+  console.log(`총 색상 요소: ${total}개`,
+    valid ? '✅ 모든 패널에 1개 이상 존재' : `⚠️  빈 패널: ${emptyPanels.join(', ')}`);
   console.groupEnd();
   /* eslint-enable no-console */
 }

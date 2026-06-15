@@ -1,27 +1,38 @@
 /**
  * @fileoverview 울산 E-Card SVG 색채 조정 엔진 — 진입점
  * @module svg-engine
- * @version 1.0.0
+ * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * 역할
+ * v2 변경 사항
  * ─────────────────────────────────────────────────────────────────
  *
- *   emotion-engine의 감성 점수(emotionScores)와 다양성 시드를 받아
- *   울산 12경 SVG의 각 패널에 개별화된 색채값을 적용한다.
+ *   v1: color-calculator.calculateAllPanelColors()가 12패널의
+ *       main/sub/acc 3색을 미리 계산해 PanelColorMap으로 반환 →
+ *       클라이언트가 grad-spot-XX-{main,sub,acc} 3개 stop에 그대로 적용
+ *
+ *   v2: 색상 계산은 "SVG에 기록된 현재 색상"을 출발점으로 하므로
+ *       서버가 미리 패널 색상을 계산해 보낼 필요가 없다.
+ *       서버 응답에는 emotionScores + diversitySeed만 포함하면 되고,
+ *       클라이언트(svg-renderer.applyDeltaColorsToSVG)가 직접
+ *       SVG의 'spot-XX-N' 요소에서 현재 색을 읽어 동일한 수식
+ *       (color-engine.js)으로 계산·적용한다.
+ *
+ *       따라서 이 모듈의 퍼블릭 API는 PNG 생성(생성형 카드 다운로드)
+ *       경로(generateCardPNG)만 남는다. applySvgColors /
+ *       buildPanelColorMap / gradientStopId / validatePanelColors 등
+ *       main/sub/acc 기반 API는 v2에서 제거되었다.
  *
  *   ┌─────────────────────────────────────────────────────┐
  *   │  emotionScores + diversitySeed                      │
  *   │         │                                           │
- *   │         ▼                                           │
- *   │  color-calculator.js                                │
- *   │   → 12패널 각각의 hex 색상 계산                      │
+ *   │         ├─── [클라이언트] 그대로 응답에 포함         │
+ *   │         │     public/js/svg-renderer.js 가          │
+ *   │         │     color-engine.js로 SVG 현재 색에서      │
+ *   │         │     직접 계산·적용                         │
  *   │         │                                           │
- *   │         ├─── [클라이언트] panelColors JSON 반환      │
- *   │         │     public/js/svg-renderer.js 가 적용      │
- *   │         │                                           │
- *   │         └─── [서버] svg-patcher.js                  │
- *   │               → jsdom으로 SVG stop-color 변경        │
+ *   │         └─── [서버] generateCardPNG()                │
+ *   │               → svg-patcher.js (jsdom, 'spot-XX-N') │
  *   │               → png-exporter.js로 PNG 변환           │
  *   └─────────────────────────────────────────────────────┘
  *
@@ -44,12 +55,8 @@
  *   11    외고산 옹기마을           spot-10         idx 4
  *   12    대운산 내원암 계곡        spot-11         idx 6
  *
- *   SVG 그라디언트 stop 요소 ID 형식:
- *     grad-spot-04-main  (간절곶 일출 주색)
- *     grad-spot-04-sub   (간절곶 일출 보조색)
- *     grad-spot-04-acc   (간절곶 일출 강조색)
- *
- *   fill 변경 대상: id가 "spot-XX"로 시작하는 모든 <path> 요소
+ *   색상 조정 대상 ID 형식: 'spot-{XX}-{N}' (N: 1,2,3... 가변, 역할 구분 없음)
+ *     - <stop> 요소이면 stop-color, 그 외 도형(path/circle 등)이면 fill
  *
  * ─────────────────────────────────────────────────────────────────
  * 서버 배포 파일구조(v3) 내 위치
@@ -57,23 +64,24 @@
  *
  *   svg-engine/
  *     index.js             ← 이 파일 (진입점 · 퍼블릭 API)
- *     color-calculator.js  ← 감성파라미터 → 12패널 hex 색상 계산
- *     svg-patcher.js       ← 서버사이드 SVG DOM 조작 (PNG 저장용)
+ *     color-calculator.js  ← 감성파라미터 → delta 계산 (computeGlobalParams, applyDeltaToHex)
+ *     svg-patcher.js       ← 서버사이드 SVG DOM 조작 (PNG 저장용, spot-XX-N 자동 탐색)
  *     png-exporter.js      ← SVG → PNG 변환 (sharp)
  *
  * ─────────────────────────────────────────────────────────────────
  * 사용 예시
  * ─────────────────────────────────────────────────────────────────
  *
- *   // ① 클라이언트 전달용 색상 계산 (impression 라우트)
- *   import { applySvgColors } from './svg-engine/index.js';
- *
- *   const panelColors = applySvgColors(emotionScores, diversitySeed);
- *   // → {
- *   //     'spot-00': { main:'#3D8B5E', sub:'#6BBFD4', acc:'#DFFFEF', svgId:'spot-00' },
- *   //     'spot-04': { main:'#FF6635', sub:'#FFB347', acc:'#FFCF9E', svgId:'spot-04' },
- *   //     ...
- *   //   }
+ *   // ① /api/impression 응답 — emotionScores + diversitySeed만 포함
+ *   res.json({
+ *     spotIndex, emotionScores, primaryEmotion, keywords,
+ *     diversitySeed,
+ *     colorTempFilter: colorTempToFilter(
+ *       computeGlobalParams(emotionScores).colorTemp,
+ *     ),
+ *     reply: { main, place, tagline },
+ *   });
+ *   // → public/js/svg-renderer.applyDeltaColorsToSVG(emotionScores, diversitySeed)
  *
  *   // ② 서버사이드 PNG 생성 (card 라우트)
  *   import { generateCardPNG } from './svg-engine/index.js';
@@ -92,57 +100,39 @@
 
 'use strict';
 
-import { calculateAllPanelColors, colorTempToFilter } from './color-calculator.js';
-import { patchSVG }  from './svg-patcher.js';
-import { svgToPng }  from './png-exporter.js';
+import {
+  computeGlobalParams,
+  applyDeltaToHex,
+  colorTempToFilter,
+  SVG_ID_MAP,
+  SPOT_NAMES,
+} from './color-calculator.js';
+import { patchSVG, validateSvgAssets, debugPrintPatch, clearSvgCache } from './svg-patcher.js';
+import { svgToPng } from './png-exporter.js';
 
 // =============================================================================
-// ① SVG ID ↔ emotion-engine 인덱스 매핑 상수
+// ① SVG ID ↔ emotion-engine 인덱스 매핑 상수 (재노출)
 // =============================================================================
 
 /**
  * emotion-engine SPOTS 인덱스(0~11) → SVG ID 접두어 매핑.
+ * color-calculator.js의 SVG_ID_MAP을 그대로 재노출한다.
  *
- * emotion-engine/constants/spot-palettes.js 의 SPOTS 배열 순서와
- * SVG ID 체계(경승지별_ID_및_채색방법.txt)는 서로 다르다.
- * color-calculator.js 가 반환하는 배열은 emotion-engine 인덱스 기준이며
- * 이 매핑을 통해 SVG ID 키 맵으로 변환된다.
- *
- * @type {Readonly<Record<number, string>>}
+ * @type {readonly string[]}
  */
-export const EMOTION_IDX_TO_SVG_ID = Object.freeze({
-  0:  'spot-04',  // 간절곶 일출
-  1:  'spot-01',  // 대왕암공원
-  2:  'spot-06',  // 강동 몽돌해변
-  3:  'spot-09',  // 장생포 고래문화마을
-  4:  'spot-10',  // 외고산 옹기마을
-  5:  'spot-05',  // 반구대 암각화
-  6:  'spot-11',  // 대운산 내원암 계곡
-  7:  'spot-08',  // 울산대교
-  8:  'spot-07',  // 울산대공원
-  9:  'spot-00',  // 태화강 국가정원·십리대숲
-  10: 'spot-03',  // 신불산 억새평원
-  11: 'spot-02',  // 가지산 사계
-});
+export { SVG_ID_MAP, SPOT_NAMES };
 
 /**
  * SVG ID 접두어('spot-XX') → emotion-engine 인덱스 역방향 매핑.
- * svg-patcher.js 에서 12개 패널을 순회할 때 사용한다.
  *
  * @type {Readonly<Record<string, number>>}
  */
 export const SVG_ID_TO_EMOTION_IDX = Object.freeze(
-  Object.fromEntries(
-    Object.entries(EMOTION_IDX_TO_SVG_ID).map(([eIdx, svgId]) => [
-      svgId,
-      Number(eIdx),
-    ]),
-  ),
+  Object.fromEntries(SVG_ID_MAP.map((svgId, idx) => [svgId, idx])),
 );
 
 /**
- * 12개 SVG 패널 ID 목록 (spot-00 ~ spot-11, 순서 고정).
- * svg-patcher.js / svg-renderer.js 가 순회 기준으로 사용.
+ * 12개 SVG 패널 ID 목록 (spot-00 ~ spot-11, 번호순 — emotion 인덱스 순서가 아님).
  *
  * @type {readonly string[]}
  */
@@ -150,110 +140,19 @@ export const SVG_PANEL_IDS = Object.freeze(
   Array.from({ length: 12 }, (_, i) => `spot-${String(i).padStart(2, '0')}`),
 );
 
-/**
- * SVG 그라디언트 stop 요소의 ID를 반환한다.
- *
- * @param {string}              svgId  'spot-XX' 형식
- * @param {'main'|'sub'|'acc'}  role   색상 역할
- * @returns {string}  예) 'grad-spot-04-main'
- *
- * @example
- * gradientStopId('spot-04', 'main')  // → 'grad-spot-04-main'
- * gradientStopId('spot-00', 'acc')   // → 'grad-spot-00-acc'
- */
-export function gradientStopId(svgId, role) {
-  return `grad-${svgId}-${role}`;
-}
-
 // =============================================================================
-// ② PanelColorMap 빌더 — emotion-engine 배열 → SVG ID 키 맵
+// ② 글로벌 색채 파라미터 / delta 계산 (재노출)
 // =============================================================================
 
 /**
- * @typedef {Object} PanelColorEntry
- * @property {string} main   주색 hex     (예: '#FF6635')
- * @property {string} sub    보조색 hex   (예: '#FFB347')
- * @property {string} acc    강조색 hex   (예: '#FFCF9E')
- * @property {string} svgId  SVG ID 접두어 (예: 'spot-04')
+ * 감성 점수로부터 6개 글로벌 색채 파라미터(ΔHue·ΔSat·ΔLight·ΔContrast·
+ * colorTemp·lightDir·rgbTint)를 계산한다.
+ *
+ * /api/impression 라우트가 colorTempToFilter()에 전달할 colorTemp를
+ * 얻기 위해 호출한다. 패널별 색상 자체는 클라이언트가
+ * applyDeltaToHex()로 직접 계산하므로 서버가 미리 계산할 필요는 없다.
  */
-
-/**
- * @typedef {Record<string, PanelColorEntry>} PanelColorMap
- *   키: SVG ID 접두어 ('spot-00' ~ 'spot-11')
- *   값: 해당 패널의 3색 + svgId
- */
-
-/**
- * color-calculator.js 가 반환하는 emotion-engine 인덱스 기반 배열을
- * SVG ID 키 맵(PanelColorMap)으로 변환한다.
- *
- * color-calculator 반환 형식 (배열):
- *   [
- *     { index:0, main:'#FF6635', sub:'#FFB347', acc:'#FFCF9E' },  // 간절곶
- *     { index:1, main:'#2A6640', ... },                           // 대왕암
- *     ...
- *   ]
- *
- * 변환 후 PanelColorMap:
- *   {
- *     'spot-04': { main:'#FF6635', sub:'#FFB347', acc:'#FFCF9E', svgId:'spot-04' },
- *     'spot-01': { main:'#2A6640', ... },
- *     ...
- *   }
- *
- * @param {Array<{index:number, main:string, sub:string, acc:string}>} panelArray
- * @returns {PanelColorMap}
- */
-export function buildPanelColorMap(panelArray) {
-  const map = {};
-  for (const entry of panelArray) {
-    const svgId = EMOTION_IDX_TO_SVG_ID[entry.index];
-    if (!svgId) continue;
-    map[svgId] = {
-      main:  entry.main,
-      sub:   entry.sub,
-      acc:   entry.acc,
-      svgId,
-    };
-  }
-  return map;
-}
-
-// =============================================================================
-// ③ 퍼블릭 API — 클라이언트 전달용 색상 계산
-// =============================================================================
-
-/**
- * 감성 점수와 다양성 시드를 받아 12패널의 색상(PanelColorMap)을 계산한다.
- *
- * 내부적으로 color-calculator.js 를 호출하고
- * buildPanelColorMap 으로 SVG ID 키 맵으로 변환하여 반환한다.
- *
- * server/routes/impression.js 응답 흐름:
- *   applySvgColors(emotionScores, diversitySeed)
- *   → res.json({ panelColors, reply, ... })
- *   → public/js/app.js → svg-renderer.applyColorsToSVG(panelColors)
- *   → SVG <stop> stop-color 직접 변경 → CSS transition으로 색채 전환
- *
- * @param {Object} emotionScores
- *   { amazement:0~100, peace:0~100, vitality:0~100, nostalgia:0~100,
- *     freshness:0~100, grandeur:0~100, warmth:0~100, mystery:0~100 }
- * @param {number} diversitySeed  preprocessor.js 의 다양성 시드
- * @returns {PanelColorMap}
- *
- * @example
- * const panelColors = applySvgColors(
- *   { amazement:80, peace:30, vitality:70, nostalgia:20,
- *     freshness:60, grandeur:75, warmth:85, mystery:25 },
- *   142857,
- * );
- * panelColors['spot-04']
- * // → { main:'#FF7A4F', sub:'#FFBE6A', acc:'#FFD9B0', svgId:'spot-04' }
- */
-export function applySvgColors(emotionScores, diversitySeed) {
-  const panelArray = calculateAllPanelColors(emotionScores, diversitySeed);
-  return buildPanelColorMap(panelArray);
-}
+export { computeGlobalParams, applyDeltaToHex };
 
 /**
  * 색온도 오프셋을 CSS filter 문자열로 변환한다.
@@ -266,13 +165,20 @@ export function applySvgColors(emotionScores, diversitySeed) {
 export { colorTempToFilter };
 
 // =============================================================================
-// ④ 퍼블릭 API — 서버사이드 SVG 패치 (PNG 저장용)
+// ③ 퍼블릭 API — 서버사이드 SVG 패치 (PNG 저장용)
 // =============================================================================
 
 /**
  * 감성 점수를 기반으로 SVG를 패치하여 문자열로 반환한다.
- * jsdom 으로 <stop> 요소의 stop-color 속성을 직접 변경하므로
- * 클라이언트와 동일한 id 체계를 사용하여 결과가 100% 일치한다.
+ *
+ * jsdom으로 'spot-{XX}-{N}' id를 가진 모든 요소를 자동 탐색하고,
+ * 각 요소의 현재 stop-color/fill을 읽어 applyDeltaToHex()로 계산한
+ * 새 색상으로 재적용한다. 매번 원본 SVG를 기준으로 읽으므로
+ * (케이스 B) 결과는 결정론적이며 누적 변경이 없다.
+ *
+ * 클라이언트(svg-renderer.applyDeltaColorsToSVG)와 동일한 id 체계·
+ * 동일 수식(color-calculator.js / color-engine.js)을 사용하므로
+ * 결과가 100% 일치한다.
  *
  * @param {Object} emotionScores
  * @param {number} diversitySeed
@@ -280,10 +186,20 @@ export { colorTempToFilter };
  *
  * @example
  * const svg = await patchSVG(emotionScores, diversitySeed);
- * // → '<?xml version="1.0"?><svg ...>...<stop id="grad-spot-04-main"
- * //      stop-color="#FF7A4F"/>...</svg>'
  */
 export { patchSVG };
+
+/**
+ * 원본 SVG에 'spot-XX-N' 색상 요소가 패널별로 몇 개씩 있는지 점검한다.
+ * 배포 전 SVG 자산 검증용 (디자이너의 id 보완 작업 진행 상황 확인).
+ *
+ * @returns {Promise<{
+ *   valid: boolean, total: number,
+ *   panels: Array<{svgId:string, name:string, count:number, ids:string[]}>,
+ *   emptyPanels: string[],
+ * }>}
+ */
+export { validateSvgAssets, debugPrintPatch, clearSvgCache };
 
 /**
  * 패치된 SVG 문자열을 PNG 파일로 변환하여 저장한다.
@@ -298,7 +214,7 @@ export { patchSVG };
 export { svgToPng };
 
 // =============================================================================
-// ⑤ 통합 함수 — PNG E-Card 한 번에 생성
+// ④ 통합 함수 — PNG E-Card 한 번에 생성
 // =============================================================================
 
 /**
@@ -343,7 +259,7 @@ export async function generateCardPNG({
 }) {
   const t0 = Date.now();
 
-  // STEP 1: 감성 점수 → SVG DOM 패치 (jsdom)
+  // STEP 1: 감성 점수 → SVG DOM 패치 (jsdom, spot-XX-N 자동 탐색)
   const patchedSvg = await patchSVG(emotionScores, diversitySeed);
 
   // STEP 2: 패치된 SVG → PNG 파일 저장 (sharp)
@@ -358,134 +274,28 @@ export async function generateCardPNG({
 }
 
 // =============================================================================
-// ⑥ 유효성 검사 유틸리티
-// =============================================================================
-
-/**
- * PanelColorMap의 완전성과 형식을 검사한다.
- * server/routes/impression.js 에서 응답 직전에 호출하여
- * 누락·잘못된 색상값을 로그로 남길 수 있다.
- *
- * @param {PanelColorMap} panelColors
- * @returns {{ valid: boolean, issues: string[] }}
- *
- * @example
- * const { valid, issues } = validatePanelColors(panelColors);
- * if (!valid) console.warn('[svg-engine] 색상 검증 실패:', issues);
- */
-export function validatePanelColors(panelColors) {
-  const issues = [];
-
-  if (!panelColors || typeof panelColors !== 'object') {
-    return { valid: false, issues: ['panelColors 가 null 또는 비객체'] };
-  }
-
-  for (const svgId of SVG_PANEL_IDS) {
-    const entry = panelColors[svgId];
-
-    if (!entry) {
-      issues.push(`누락된 패널: ${svgId}`);
-      continue;
-    }
-
-    for (const role of ['main', 'sub', 'acc']) {
-      const val = entry[role];
-      if (typeof val !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(val)) {
-        issues.push(
-          `${svgId}.${role} 가 유효한 6자리 hex 색상이 아님: "${val}"`,
-        );
-      }
-    }
-  }
-
-  return { valid: issues.length === 0, issues };
-}
-
-// =============================================================================
-// ⑦ 디버그 유틸리티
-// =============================================================================
-
-/**
- * PanelColorMap을 콘솔에 테이블 형식으로 출력한다. (개발 전용)
- *
- * @param {PanelColorMap} panelColors
- * @param {number} [highlightEmotionIdx=-1]  ★ 표시할 emotion-engine 인덱스
- *
- * @example
- * debugPrintPanelColors(panelColors, 0);  // 간절곶(spot-04) 행에 ★
- */
-export function debugPrintPanelColors(panelColors, highlightEmotionIdx = -1) {
-  /* eslint-disable no-console */
-  const highlightSvgId = EMOTION_IDX_TO_SVG_ID[highlightEmotionIdx] ?? null;
-
-  const SPOT_NAMES = {
-    'spot-00': '태화강·십리대숲',
-    'spot-01': '대왕암공원',
-    'spot-02': '가지산 사계',
-    'spot-03': '신불산 억새',
-    'spot-04': '간절곶 일출',
-    'spot-05': '반구대 암각화',
-    'spot-06': '강동 몽돌해변',
-    'spot-07': '울산대공원',
-    'spot-08': '울산대교',
-    'spot-09': '장생포 고래',
-    'spot-10': '외고산 옹기',
-    'spot-11': '대운산 계곡',
-  };
-
-  console.group('🎨 svg-engine — PanelColorMap (12경 패널 색상)');
-  console.log('');
-  console.log(
-    ' SVG ID  │E-idx│ 경승지            │ main     │ sub      │ acc',
-  );
-  console.log(
-    '─────────┼─────┼───────────────────┼──────────┼──────────┼──────────',
-  );
-
-  for (const svgId of SVG_PANEL_IDS) {
-    const eIdx  = SVG_ID_TO_EMOTION_IDX[svgId];
-    const entry = panelColors?.[svgId] ?? {};
-    const name  = (SPOT_NAMES[svgId] ?? '').padEnd(17);
-    const mark  = svgId === highlightSvgId ? '★' : ' ';
-
-    console.log(
-      `${mark}${svgId} │ ${String(eIdx).padStart(2)}  │ ${name} │ ` +
-      `${(entry.main ?? '???????').padEnd(8)} │ ` +
-      `${(entry.sub  ?? '???????').padEnd(8)} │ ` +
-      `${entry.acc   ?? '???????'}`,
-    );
-  }
-
-  console.log('');
-  const { valid, issues } = validatePanelColors(panelColors);
-  console.log('유효성:', valid ? '✅ 통과' : `❌ ${issues.join(' | ')}`);
-  console.groupEnd();
-  /* eslint-enable no-console */
-}
-
-// =============================================================================
 // Default Export
 // =============================================================================
 
 export default {
-  // 색상 계산 (클라이언트 전달용)
-  applySvgColors,
-  calculateAllPanelColors,
+  // 색채 계산
+  computeGlobalParams,
+  applyDeltaToHex,
   colorTempToFilter,
-  buildPanelColorMap,
 
   // 서버사이드 PNG 생성
   patchSVG,
   svgToPng,
   generateCardPNG,
 
-  // ID 매핑 상수 & 헬퍼
-  EMOTION_IDX_TO_SVG_ID,
+  // 자산 검증
+  validateSvgAssets,
+  debugPrintPatch,
+  clearSvgCache,
+
+  // ID 매핑 상수
+  SVG_ID_MAP,
   SVG_ID_TO_EMOTION_IDX,
   SVG_PANEL_IDS,
-  gradientStopId,
-
-  // 유틸리티
-  validatePanelColors,
-  debugPrintPanelColors,
+  SPOT_NAMES,
 };
