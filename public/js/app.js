@@ -1,10 +1,11 @@
 /**
  * @fileoverview 울산 E-Card — 프론트엔드 앱 진입점
- * @version 3.0.0  (HTML/Vanilla JS — 빌드 도구 없음)
+ * @version 4.0.0  (2단계 화면 — 입력 / 결과, 빌드 도구 없음)
  *
  * 담당 역할:
+ *   - 화면 전환 (#screen-input ↔ #screen-result)
+ *   - 여행일정 / 여행동행 칩 선택, 소감 입력 이벤트 처리
  *   - SVG 로드 및 인라인 삽입
- *   - 소감 입력 이벤트 처리
  *   - /api/impression 호출 → 색채 적용 → 결과 렌더링
  *   - /api/card 호출 → PNG 다운로드
  *   - SNS 공유
@@ -32,14 +33,24 @@ import { analyzeImpression,
 
 const $ = (id) => document.getElementById(id);
 
+// 화면 전환
+const elScreenInput   = $('screen-input');
+const elScreenResult  = $('screen-result');
+const elBackBtn       = $('back-btn');
+
+// 화면 1 — 입력 폼
+const elForm         = $('impression-form');
+const elDurationGroup = $('duration-group');
+const elCompanionGroup = $('companion-group');
 const elTextarea     = $('impression-text');
 const elCharCount    = $('char-count');
 const elSubmitBtn    = $('submit-btn');
-const elResetBtn     = $('reset-btn');
 const elErrorMsg     = $('error-msg');
-const elResultSection = $('result-section');
+
+// 로딩
 const elLoading      = $('loading-overlay');
-const elBlurHint     = $('blur-hint');
+
+// 화면 2 — 결과
 const elSpotLabel    = $('active-spot-label');
 const elPaletteStrip = $('palette-strip');
 const elKeywordChips = $('keyword-chips');
@@ -50,6 +61,7 @@ const elReplyTagline = $('reply-tagline');
 const elSpectrumBars = $('spectrum-bars');
 const elSaveBtn      = $('save-btn');
 const elShareBtn     = $('share-btn');
+const elResetBtn     = $('reset-btn');
 
 // =============================================================================
 // ③ 앱 상태
@@ -60,6 +72,12 @@ let phase = 'idle';
 
 /** 마지막 API 응답 데이터 */
 let lastResult = null;
+
+/** 선택된 여행일정 ('day'|'1n2d'|'2n3d'|'3n4d'|'4n+'|null) */
+let selectedDuration = null;
+
+/** 선택된 여행동행 ('solo'|'family'|'friends'|'couple'|'other'|null) */
+let selectedCompanion = null;
 
 // 감성 키값 한글 레이블 맵
 const EMOTION_LABELS = {
@@ -74,8 +92,23 @@ const EMOTION_LABELS = {
 };
 
 // =============================================================================
-// ④ 상태 전환
+// ④ 화면 전환
 // =============================================================================
+
+/**
+ * 화면1(입력) ↔ 화면2(결과) 전환
+ * @param {'input'|'result'} screen
+ */
+function showScreen(screen) {
+  const showResult = screen === 'result';
+  elScreenInput.classList.toggle('is-hidden', showResult);
+  elScreenResult.classList.toggle('is-hidden', !showResult);
+  elBackBtn.classList.toggle('hidden', !showResult);
+
+  if (!showResult) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
 
 /**
  * 앱 단계(phase)를 전환하고 UI를 업데이트한다.
@@ -87,15 +120,12 @@ function setPhase(next) {
   // 로딩 오버레이
   elLoading.classList.toggle('hidden', next !== 'loading');
 
-  // 버튼 상태
-  elSubmitBtn.disabled = (next === 'loading' || elTextarea.value.trim().length < 8);
-  elResetBtn.classList.toggle('hidden', next === 'idle');
+  // 제출 버튼 상태
+  elSubmitBtn.disabled = (next === 'loading' || elTextarea.value.trim().replace(/\s+/g, '').length < 8);
 
-  // 블러 힌트 (idle 상태에서만 표시)
-  elBlurHint.classList.toggle('hidden', next !== 'idle');
-
-  // 결과 섹션
-  elResultSection.classList.toggle('hidden', next !== 'done');
+  if (next === 'done') {
+    showScreen('result');
+  }
 }
 
 // =============================================================================
@@ -122,6 +152,10 @@ async function init() {
 // =============================================================================
 
 function bindEvents() {
+  // 여행일정 / 여행동행 칩
+  bindChipGroup(elDurationGroup, (value) => { selectedDuration = value; });
+  bindChipGroup(elCompanionGroup, (value) => { selectedCompanion = value; });
+
   // 텍스트 입력
   elTextarea.addEventListener('input', onTextInput);
 
@@ -133,11 +167,42 @@ function bindEvents() {
     }
   });
 
+  // 폼 제출
+  elForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    onSubmit();
+  });
+
   // 버튼
-  elSubmitBtn.addEventListener('click', onSubmit);
-  elResetBtn.addEventListener('click',  onReset);
-  elSaveBtn.addEventListener('click',   onSave);
-  elShareBtn.addEventListener('click',  onShare);
+  elResetBtn.addEventListener('click', onReset);
+  elBackBtn.addEventListener('click',  onReset);
+  elSaveBtn.addEventListener('click',  onSave);
+  elShareBtn.addEventListener('click', onShare);
+}
+
+/**
+ * 칩 그룹(라디오 버튼 기반)에 선택 상태 토글 + 콜백을 연결한다.
+ * @param {HTMLElement} groupEl  .chip-grid 컨테이너
+ * @param {(value:string) => void} onSelect
+ */
+function bindChipGroup(groupEl, onSelect) {
+  if (!groupEl) return;
+
+  const chips = Array.from(groupEl.querySelectorAll('.chip'));
+
+  chips.forEach((chip) => {
+    const input = chip.querySelector('input[type="radio"]');
+    if (!input) return;
+
+    chip.addEventListener('click', () => {
+      // 같은 그룹 내 다른 칩의 선택 해제
+      chips.forEach((c) => c.classList.remove('is-selected'));
+      chip.classList.add('is-selected');
+      input.checked = true;
+
+      onSelect(input.value);
+    });
+  });
 }
 
 // =============================================================================
@@ -146,7 +211,6 @@ function bindEvents() {
 
 function onTextInput() {
   const text  = elTextarea.value;
-  const len   = text.length;
   const bare  = text.replace(/\s+/g, '').length;
 
   // 글자 수 표시
@@ -168,17 +232,20 @@ function onTextInput() {
 
 async function onSubmit() {
   const text = elTextarea.value.trim();
-  if (text.length < 8 || phase === 'loading') return;
+  if (text.replace(/\s+/g, '').length < 8 || phase === 'loading') return;
 
   hideError();
   setPhase('loading');
 
   try {
-    // POST /api/impression
-    const data = await analyzeImpression(text);
+    // POST /api/impression — 여행일정·동행 정보 포함
+    const data = await analyzeImpression(text, {
+      tripDuration: selectedDuration,
+      companion:    selectedCompanion,
+    });
     lastResult = data;
 
-    // ── SVG 색채 적용 (v2: SVG 현재 색상 기준 delta 적용) ──────────
+    // ── SVG 색채 적용 (SVG 현재 색상 기준 delta 적용) ──────────────
     // emotionScores + diversitySeed만으로 SVG 'spot-XX-N' 요소의
     // 현재 색에서 직접 계산·적용한다 (서버 panelColors 불필요).
     const colorResult = applyDeltaColorsToSVG(
@@ -209,7 +276,7 @@ async function onSubmit() {
     // ── 팔레트 스트립 ─────────────────────────────────────────────
     renderPaletteStrip(colorResult.panelColors);
 
-    // ── 결과 렌더링 ───────────────────────────────────────────────
+    // ── 결과 렌더링 (화면 2로 전환) ─────────────────────────────────
     renderResult(data);
 
     setPhase('done');
@@ -231,17 +298,37 @@ async function onSubmit() {
 
 function onReset() {
   elTextarea.value  = '';
-  elCharCount.textContent = '0 · Ctrl+Enter로 전송';
+  elCharCount.textContent = '0 · 8자 이상 입력 후 전송';
   lastResult = null;
+
+  // 칩 선택 해제
+  resetChipGroup(elDurationGroup);
+  resetChipGroup(elCompanionGroup);
+  selectedDuration  = null;
+  selectedCompanion = null;
 
   resetSVG();
   elSpotLabel.classList.add('hidden');
   elPaletteStrip.classList.add('hidden');
 
   hideError();
+  showScreen('input');
   setPhase('idle');
 
   elTextarea.focus();
+}
+
+/**
+ * 칩 그룹의 모든 선택 상태를 해제한다.
+ * @param {HTMLElement} groupEl
+ */
+function resetChipGroup(groupEl) {
+  if (!groupEl) return;
+  groupEl.querySelectorAll('.chip').forEach((chip) => {
+    chip.classList.remove('is-selected');
+    const input = chip.querySelector('input[type="radio"]');
+    if (input) input.checked = false;
+  });
 }
 
 // =============================================================================
@@ -346,7 +433,7 @@ function renderResult(data) {
   renderSpectrumBars(data.emotionScores ?? {});
 
   // ── fade-up 애니메이션 재시작 ─────────────────────────────────
-  elResultSection.querySelectorAll('.fade-up').forEach((el) => {
+  elScreenResult.querySelectorAll('.fade-up').forEach((el) => {
     el.style.animation = 'none';
     // 브라우저가 리플로우를 발생시키도록 잠시 비움
     void el.offsetHeight;
@@ -448,7 +535,7 @@ function renderSpectrumBars(scores) {
 // =============================================================================
 
 /**
- * SVG 아래에 현재 강조된 경승지 이름을 표시한다.
+ * SVG 위에 현재 강조된 경승지 이름을 표시한다.
  * @param {number} spotIndex
  */
 function showSpotLabel(spotIndex) {
@@ -465,12 +552,12 @@ function showSpotLabel(spotIndex) {
 
 function showError(msg) {
   elErrorMsg.textContent = msg;
-  elErrorMsg.classList.remove('hidden');
+  elErrorMsg.classList.remove('is-hidden');
 }
 
 function hideError() {
   elErrorMsg.textContent = '';
-  elErrorMsg.classList.add('hidden');
+  elErrorMsg.classList.add('is-hidden');
 }
 
 // =============================================================================

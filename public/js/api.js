@@ -261,18 +261,26 @@ function _sanitizeCardResponse(data) {
  * 방문객 소감을 분석하여 E-Card 데이터를 반환한다.
  *
  * POST /api/impression
- *   Body  : { text: string, language?: string }
+ *   Body  : { text: string, language?: string, tripDuration?: string, companion?: string }
  *   응답  : { spotIndex, emotionScores, primaryEmotion, keywords,
  *             panelColors, reply, colorTempFilter, diversitySeed }
  *
  * @param {string} text      방문객 소감 원문 (8자 이상)
- * @param {string} [language='ko']  언어 코드 ('ko'|'en'|'ja'|'zh')
+ * @param {Object} [options]
+ * @param {string} [options.language='ko']      언어 코드 ('ko'|'en'|'ja'|'zh')
+ * @param {string} [options.tripDuration]       여행일정
+ *   'day'|'1n2d'|'2n3d'|'3n4d'|'4n+' (당일/1박2일/2박3일/3박4일/4박이상)
+ * @param {string} [options.companion]          여행동행
+ *   'solo'|'family'|'friends'|'couple'|'other' (혼자/가족/친구/연인/기타)
  * @returns {Promise<Object>}  보정된 impression 응답 데이터
  * @throws  {ApiError}
  *
  * @example
  * try {
- *   const data = await analyzeImpression('간절곶에서 일출을 봤어요. 정말 감동이었어요 🌅');
+ *   const data = await analyzeImpression(
+ *     '간절곶에서 일출을 봤어요. 정말 감동이었어요 🌅',
+ *     { tripDuration: '2n3d', companion: 'couple' },
+ *   );
  *   // data.reply.main    → "그 빛은 오래도록 당신 곁에 머물 것입니다"
  *   // data.panelColors   → Array(12)
  *   // data.spotIndex     → 0
@@ -282,14 +290,16 @@ function _sanitizeCardResponse(data) {
  *   }
  * }
  */
-export async function analyzeImpression(text, language = 'ko') {
+export async function analyzeImpression(text, options = {}) {
   if (typeof text !== 'string' || text.trim().length < 8) {
     throw new ApiError('소감을 8자 이상 입력해주세요.', 400, false);
   }
 
+  const { language = 'ko', tripDuration = null, companion = null } = options;
+
   const rawData = await _post(
     '/api/impression',
-    { text: text.trim(), language },
+    { text: text.trim(), language, tripDuration, companion },
     API_CONFIG.IMPRESSION_TIMEOUT_MS,
   );
 
