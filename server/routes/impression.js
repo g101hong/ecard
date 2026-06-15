@@ -99,12 +99,54 @@ function validateText(text) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 여행일정 / 동행 입력값 매핑
+// ─────────────────────────────────────────────────────────────────
+
+/** 클라이언트 tripDuration 값 → 답글 프롬프트에 덧붙일 한국어 문구 */
+const TRIP_DURATION_LABELS = {
+  day:    '당일치기 여행',
+  '1n2d': '1박 2일 여행',
+  '2n3d': '2박 3일 여행',
+  '3n4d': '3박 4일 여행',
+  '4n+':  '4박 이상의 긴 여행',
+};
+
+/** 클라이언트 companion 값 → emotion-engine/reply-engine companion 키 */
+const COMPANION_MAP = {
+  solo:    'solo',
+  family:  'family',
+  friends: 'friends',
+  couple:  'couple',
+  // '기타'는 reply-engine이 인식하는 4종(solo/couple/family/friends)에
+  // 없으므로 가장 무난한 friends로 매핑한다.
+  other:   'friends',
+};
+
+/**
+ * tripDuration 값이 유효한지 확인하고 답글 프롬프트용 한국어 라벨을 반환한다.
+ * @param {any} value
+ * @returns {string|null}
+ */
+function resolveTripDurationLabel(value) {
+  return TRIP_DURATION_LABELS[value] ?? null;
+}
+
+/**
+ * companion 값이 유효한지 확인하고 reply-engine companion 키로 변환한다.
+ * @param {any} value
+ * @returns {string|null}
+ */
+function resolveCompanionKey(value) {
+  return COMPANION_MAP[value] ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // POST /api/impression
 // ─────────────────────────────────────────────────────────────────
 
 router.post('/', async (req, res) => {
   const t0 = Date.now();
-  const { text, language } = req.body;
+  const { text, language, tripDuration, companion } = req.body;
 
   // ── 1. 입력값 검증 ─────────────────────────────────────────────
   const validation = validateText(text);
@@ -112,6 +154,9 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: validation.error });
   }
   const cleanText = validation.cleaned;
+
+  const tripLabel    = resolveTripDurationLabel(tripDuration);
+  const companionKey = resolveCompanionKey(companion);
 
   // ── 2. emotion-engine 감성 분석 ────────────────────────────────
   let emotionResult;
@@ -139,15 +184,49 @@ router.post('/', async (req, res) => {
     // 방문 시점 컨텍스트 수집 (현재 시각 기준 — 절기·계절·시간대)
     const visitCtx = collectVisitContext();
 
+    // 사용자가 선택한 동행 정보를 emotion-engine 분석 결과의
+    // contextAnalysis.companionContext에 confidence 1.0으로 덮어쓴다.
+    // → classify() 내부 mergeWithExtractionContext()가
+    //   AI 추론값(confidence < 0.6)보다 사용자 선택값을 우선 사용하게 됨.
+    // 색채 파라미터(emotionScores/globalParams)는 변경하지 않으므로
+    // 이미지 색감에는 영향이 없고 답글 맥락에만 반영된다.
+    const extractionForReply = {
+      ...emotionResult,
+      contextAnalysis: {
+        ...(emotionResult.context ?? {}),
+        timeContext:      { detected: emotionResult.context?.timeContext ?? null,
+                             confidence: emotionResult.context?.timeConfidence ?? 0 },
+        seasonContext:    { detected: emotionResult.context?.seasonContext ?? null, confidence: 0 },
+        companionContext: companionKey
+          ? { detected: companionKey, confidence: 1.0 }
+          : { detected: emotionResult.context?.companionContext ?? null, confidence: 0 },
+        emojiInterpretation: emotionResult.context?.emojiInterpretation ?? null,
+        keyEmotionalPhrases: emotionResult.context?.keyEmotionalPhrases ?? [],
+      },
+      emotionScores:   emotionResult.emotionScores,
+      dominantEmotion: typography?.dominantEmotion,
+      spotIndex:       typography?.spotIndex,
+      primaryEmotion:  typography?.primaryEmotion,
+      keywords:        typography?.keywords,
+    };
+
     // 소감 분류 (경승지명 / 자연키워드 / 감성+계절 / 시간대)
     const classified = classify(
-      emotionResult,
+      extractionForReply,
       visitCtx,
       cleanText,
       diversitySeed,
     );
 
-    replyResult = await generateReply(classified, cleanText);
+    // 여행일정 정보는 reply-engine에 별도 필드가 없으므로,
+    // 답글 생성용 원문(originalText)에 자연어로 결합하여
+    // Gemini가 맥락으로 인식하도록 한다 (정상 API 경로에서만 의미 있음;
+    // 폴백 템플릿은 이 텍스트를 사용하지 않으므로 영향 없음).
+    const replyOriginalText = tripLabel
+      ? `[${tripLabel}] ${cleanText}`
+      : cleanText;
+
+    replyResult = await generateReply(classified, replyOriginalText);
 
   } catch (err) {
     console.warn('[impression] reply-engine 오류 (폴백 사용):', err.message);
@@ -176,6 +255,7 @@ router.post('/', async (req, res) => {
     `[impression] 완료 ${processingTimeMs}ms |`,
     `경승지: ${typography?.spotName} |`,
     `감성: ${typography?.primaryEmotion} |`,
+    `여행: ${tripLabel ?? '-'} | 동행: ${companionKey ?? '-'} |`,
     emotionIsFallback ? '⚠️ 감성폴백' : '✅',
     replyResult.isFallback ? '⚠️ 답글폴백' : '✅',
   );
@@ -205,6 +285,8 @@ router.post('/', async (req, res) => {
       processingTimeMs,
       isFallback:       emotionIsFallback,
       replyIsFallback:  replyResult.isFallback,
+      tripDuration:     tripDuration ?? null,
+      companion:        companion    ?? null,
     },
   });
 });
