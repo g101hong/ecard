@@ -1,44 +1,53 @@
 /**
  * @fileoverview 울산 E-Card — 감성 벡터 → SVG 색채 계산 엔진 (클라이언트)
  * @module public/js/color-engine
- * @version 1.0.0
+ * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * 역할
+ * v2 변경 사항 (svg-engine/color-calculator.js v2 와 동일 수식)
  * ─────────────────────────────────────────────────────────────────
  *
- *   8차원 감성 점수(emotionScores)를 받아
- *   울산 12경 패널 각각의 최종 SVG 색상(main/sub/acc + cssHSL)을
- *   브라우저에서 직접 계산한다.
+ *   v1: SPOT_BASE_PALETTES 상수(main/sub/acc hex)에서 매번 동일하게 시작
+ *       → grad-spot-XX-{main,sub,acc} 3개 고정 역할만 변경
  *
- *   서버(emotion-engine/param-synthesizer.js +
- *         emotion-engine/panel-individualizer.js)의
- *   핵심 수식을 클라이언트 전용으로 재구현한 모듈이다.
- *   (빌드 도구 없는 순수 HTML/JS 구조이므로 모듈 공유 대신 복제)
+ *   v2: SVG(이미 #svg-container에 인라인 삽입된 원본)에 기록된
+ *       "현재 색상"을 출발점(HSL)으로 사용
+ *       → id가 'spot-{idx}-{n}' (idx:00~11, n:1,2,3...) 형식인
+ *         모든 요소(<stop> 또는 도형)를 대상으로,
+ *         main/sub/acc 역할 구분 없이 동일한 감성 delta를 적용
+ *       → 패널당 색상 요소 개수는 가변(SVG에서 자동 탐색)
+ *
+ *   서버(svg-engine/color-calculator.js)와 완전히 동일한 수식을 사용하므로
+ *   서버 patchSVG() 결과(PNG)와 클라이언트 미리보기가 100% 일치한다.
+ *
+ *   "SVG 현재 색상"은 #svg-container에 처음 삽입된(=원본) SVG에서 읽는다.
+ *   svg-renderer.applyDeltaColorsToSVG()가 매번 *원본 삽입 시점의 색*을
+ *   기준으로 계산하도록 보장해야 결정론·비누적 특성이 유지된다
+ *   (자세한 내용은 svg-renderer.js 참조).
  *
  * ─────────────────────────────────────────────────────────────────
  * [사용 시점 — app.js]
  *
- *   1. 정상 경로: /api/impression 응답에 panelColors[12]가 포함되면
- *      이 모듈을 호출하지 않고 그대로 SVG에 적용한다.
+ *   1. 정상 경로: /api/impression 응답에 emotionScores + diversitySeed가
+ *      포함되면, svg-renderer.applyDeltaColorsToSVG(emotionScores, seed)가
+ *      이 모듈의 computeGlobalParams/applyDeltaToHex를 호출해
+ *      SVG의 'spot-XX-N' 요소를 직접 패치한다.
  *
- *   2. 폴백 경로: panelColors가 없거나(서버 오류·구버전 응답 등)
- *      emotionScores만 있을 때, 이 모듈의 calculateAllPanelColors()로
- *      클라이언트에서 즉시 12패널 색상을 계산한다.
+ *   2. 폴백 경로도 동일한 모듈을 사용 — 서버·클라이언트 분기 없음
+ *      (v1처럼 별도 폴백 계산 경로가 필요 없다. 서버가 panelColors를
+ *      미리 계산해 보낼 필요도 없어졌다 — emotionScores + diversitySeed만
+ *      전달하면 클라이언트가 SVG의 현재 색에서 직접 계산한다)
  *
  * ─────────────────────────────────────────────────────────────────
  * [핵심 흐름]
  *
  *   emotionScores (8차원, 0~100)
  *         │
- *         ▼ synthesizeParams()
+ *         ▼ computeGlobalParams()
  *   GlobalColorParams (6종: ΔHue·ΔSat·ΔLight·ΔContrast·ColorTemp·LightDir)
  *         │
- *         ▼ applyParamsToSpot()  (× 12경 반복)
- *   PanelColor { main, sub, acc, cssHSL }
- *         │
- *         ▼ calculateAllPanelColors()
- *   PanelColor[12]  ← svg-renderer.applyColorsToSVG() 가 사용
+ *         ▼ applyDeltaToHex(currentHex, panelIndex, gp, seed)  (요소별)
+ *   새 hex
  */
 
 'use strict';
@@ -56,7 +65,7 @@ const wrapHue = (h) => ((h % 360) + 360) % 360;
  * @param {string} hex  '#RRGGBB'
  * @returns {{ h:number, s:number, l:number }}
  */
-function hexToHsl(hex) {
+export function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -82,7 +91,7 @@ function hexToHsl(hex) {
  * @param {number} l
  * @returns {string}
  */
-function hslToHex(h, s, l) {
+export function hslToHex(h, s, l) {
   h = wrapHue(h);
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -96,14 +105,16 @@ function hslToHex(h, s, l) {
 }
 
 /**
- * CSS hsl() 문자열 생성
- * @param {number} h  0~360
- * @param {number} s  0~1
- * @param {number} l  0~1
+ * hex에 RGB 배수 틴트를 곱한 뒤 hex로 반환한다.
+ * @param {string} hex
+ * @param {{ r:number, g:number, b:number }} tint
  * @returns {string}
  */
-function toCssHsl(h, s, l) {
-  return `hsl(${wrapHue(h).toFixed(1)}, ${(s * 100).toFixed(1)}%, ${(l * 100).toFixed(1)}%)`;
+function applyTintToHex(hex, tint) {
+  const r = clamp(Math.round(parseInt(hex.slice(1, 3), 16) * tint.r), 0, 255);
+  const g = clamp(Math.round(parseInt(hex.slice(3, 5), 16) * tint.g), 0, 255);
+  const b = clamp(Math.round(parseInt(hex.slice(5, 7), 16) * tint.b), 0, 255);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
 /**
@@ -114,48 +125,11 @@ function toCssHsl(h, s, l) {
 const norm = (score) => clamp(score ?? 0, 0, 100) / 100;
 
 // =============================================================================
-// ② 글로벌 색채 파라미터 범위 상수
-//    (emotion-engine/param-synthesizer.js LIMITS와 동일)
-// =============================================================================
-
-const LIMITS = {
-  deltaHue:      { min: -25,   max: +25   },
-  deltaSat:      { min:  0.50, max:  1.45 },
-  deltaLight:    { min: -0.20, max: +0.20 },
-  deltaContrast: { min:  0.65, max:  1.45 },
-  colorTemp:     { min: -1500, max: +1500 },
-  lightDir:      { min: -35,   max: +35   },
-};
-
-const limit = (key, value) => clamp(value, LIMITS[key].min, LIMITS[key].max);
-
-// =============================================================================
-// ③ 울산 12경 기본 팔레트
-//    (emotion-engine/panel-individualizer.js SPOT_BASE_PALETTES와 동일)
-// =============================================================================
-
-const SPOT_BASE_PALETTES = [
-  { index: 0,  name: '간절곶 일출',             main: '#FF6635', sub: '#FFB347', acc: '#FFCF9E' },
-  { index: 1,  name: '대왕암공원',               main: '#2A6640', sub: '#607B8B', acc: '#A8D5B5' },
-  { index: 2,  name: '강동 몽돌해변',            main: '#4A6880', sub: '#38A89D', acc: '#CAF0F8' },
-  { index: 3,  name: '장생포 고래문화마을',      main: '#0B5EA8', sub: '#48A9C5', acc: '#C8E8F5' },
-  { index: 4,  name: '외고산 옹기마을',          main: '#B5693A', sub: '#7A3D2B', acc: '#E8C99A' },
-  { index: 5,  name: '반구대 암각화',            main: '#C4956A', sub: '#6B3D1E', acc: '#E8D5B5' },
-  { index: 6,  name: '대운산 내원암 계곡',       main: '#2D7D5E', sub: '#8B7214', acc: '#D4E8D0' },
-  { index: 7,  name: '울산대교',                 main: '#4A6FA5', sub: '#C8A84B', acc: '#E8F0F8' },
-  { index: 8,  name: '울산대공원',               main: '#5A9E6F', sub: '#E8607A', acc: '#F5DEB3' },
-  { index: 9,  name: '태화강 국가정원·십리대숲', main: '#3D8B5E', sub: '#6BBFD4', acc: '#DFFFEF' },
-  { index: 10, name: '신불산 억새평원',          main: '#D4A853', sub: '#8FA8C8', acc: '#F5E8C8' },
-  { index: 11, name: '가지산 사계',              main: '#6B8F6E', sub: '#D4703A', acc: '#F5E6C8' },
-].map((s) => ({ ...s, mainHsl: hexToHsl(s.main) }));
-
-// =============================================================================
-// ④ 패널별 반응 가중치 행렬
-//    (emotion-engine/panel-individualizer.js PANEL_WEIGHT_MATRIX와 동일)
+// ② 패널별 반응 가중치 행렬 (svg-engine/color-calculator.js PANEL_WEIGHTS와 동일)
 //    1.0 = 표준 / >1.0 = 민감 / <1.0 = 둔감
 // =============================================================================
 
-const PANEL_WEIGHT_MATRIX = [
+export const PANEL_WEIGHTS = [
   /* 0  간절곶 일출     */ { hue: 1.40, sat: 1.10, light: 1.30, contrast: 1.20, temp: 1.60, lightDir: 1.30 },
   /* 1  대왕암공원      */ { hue: 0.70, sat: 1.40, light: 0.85, contrast: 1.10, temp: 0.60, lightDir: 0.80 },
   /* 2  강동 몽돌해변   */ { hue: 0.90, sat: 1.20, light: 1.00, contrast: 1.35, temp: 0.70, lightDir: 1.00 },
@@ -170,14 +144,41 @@ const PANEL_WEIGHT_MATRIX = [
   /* 11 가지산 사계     */ { hue: 1.55, sat: 1.20, light: 1.00, contrast: 1.10, temp: 1.25, lightDir: 0.90 },
 ];
 
-/** 파라미터별 최대 노이즈 크기 (panel-individualizer.js NOISE_AMP와 동일) */
+/** 파라미터별 최대 노이즈 크기 (svg-engine/color-calculator.js NOISE_AMP와 동일) */
 const NOISE_AMP = {
-  hue: 4.0, sat: 0.04, light: 0.03, contrast: 0.04, temp: 80, lightDir: 3.0,
+  hue: 4.0, sat: 0.04, light: 0.03, temp: 80,
 };
 
 // =============================================================================
-// ⑤ 결정론적 미세 노이즈 생성기
-//    (panel-individualizer.js noiseValue와 동일 — 동일 입력 → 동일 출력)
+// ③ emotion-engine 인덱스(0~11) ↔ SVG spot-XX 매핑
+//    (svg-engine/color-calculator.js SVG_ID_MAP과 동일)
+// =============================================================================
+
+export const SVG_ID_MAP = [
+  'spot-04', // 0  간절곶 일출
+  'spot-01', // 1  대왕암공원
+  'spot-06', // 2  강동 몽돌해변
+  'spot-09', // 3  장생포 고래문화마을
+  'spot-10', // 4  외고산 옹기마을
+  'spot-05', // 5  반구대 암각화
+  'spot-11', // 6  대운산 내원암 계곡
+  'spot-08', // 7  울산대교
+  'spot-07', // 8  울산대공원
+  'spot-00', // 9  태화강 국가정원·십리대숲
+  'spot-03', // 10 신불산 억새평원
+  'spot-02', // 11 가지산 사계
+];
+
+/** 경승지 이름 (emotion-engine 인덱스 순서) */
+export const SPOT_NAMES = [
+  '간절곶 일출', '대왕암공원', '강동 몽돌해변', '장생포 고래문화마을',
+  '외고산 옹기마을', '반구대 암각화', '대운산 내원암 계곡', '울산대교',
+  '울산대공원', '태화강 국가정원·십리대숲', '신불산 억새평원', '가지산 사계',
+];
+
+// =============================================================================
+// ④ 결정론적 미세 노이즈 생성기
+//    (svg-engine/color-calculator.js noiseValue와 동일 — 동일 입력 → 동일 출력)
 // =============================================================================
 
 /**
@@ -187,7 +188,7 @@ const NOISE_AMP = {
  * @param {number} paramIndex
  * @returns {number} -1 ~ +1
  */
-function noiseValue(seed, panelIndex, paramIndex) {
+export function noiseValue(seed, panelIndex, paramIndex) {
   let h = (seed ^ (panelIndex * 2654435761) ^ (paramIndex * 2246822519)) >>> 0;
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
@@ -196,8 +197,8 @@ function noiseValue(seed, panelIndex, paramIndex) {
 }
 
 // =============================================================================
-// ⑥ 핵심 수식 — 감성 점수 → 6개 글로벌 색채 파라미터
-//    (emotion-engine/param-synthesizer.js computeCoreParams와 동일)
+// ⑤ 핵심 수식 — 감성 점수 → 6개 글로벌 색채 파라미터
+//    (svg-engine/color-calculator.js computeGlobalParams와 동일)
 // =============================================================================
 
 /**
@@ -208,28 +209,24 @@ function noiseValue(seed, panelIndex, paramIndex) {
  * @property {number} deltaContrast 명암대비 배수 (×, 0.65~1.45)
  * @property {number} colorTemp     색온도 오프셋 (K, -1500~+1500)
  * @property {number} lightDir      광원 방향 (°, -35~+35)
+ * @property {{ r:number, g:number, b:number }} rgbTint  색온도 RGB 배수
  */
 
 /**
- * 8차원 감성 점수에서 6개 글로벌 색채 파라미터를 합성한다.
- *
- * 서버(param-synthesizer.js)와 달리 contextAnalysis(시간·계절·동행자)
- * 기반 보정은 적용하지 않는다 — 클라이언트 폴백은 감성 점수만으로
- * 합리적인 결과를 내는 것이 목적이며, 시간·계절 보정은 서버
- * panelColors가 정상 수신될 때만 반영된다.
+ * 8차원 감성 점수에서 6개 글로벌 색채 파라미터를 계산한다.
  *
  * @param {Object} emotionScores  8차원 감성 점수 (각 0~100)
  * @returns {GlobalColorParams}
  *
  * @example
- * const params = synthesizeParams({
+ * const gp = computeGlobalParams({
  *   amazement: 80, peace: 30, vitality: 60, nostalgia: 20,
  *   freshness: 40, grandeur: 50, warmth: 70, mystery: 25,
  * });
- * // params.deltaHue  → +6.2  (따뜻한 방향 색조 이동)
- * // params.deltaSat  → 1.21  (비비드한 채도)
+ * // gp.deltaHue  → +6.2  (따뜻한 방향 색조 이동)
+ * // gp.deltaSat  → 1.21  (비비드한 채도)
  */
-export function synthesizeParams(emotionScores) {
+export function computeGlobalParams(emotionScores) {
   const E = {
     amazement: norm(emotionScores.amazement),
     peace:     norm(emotionScores.peace),
@@ -242,19 +239,21 @@ export function synthesizeParams(emotionScores) {
   };
 
   // ΔHue: 따뜻↔청량 주축 + 향수↔경이 보조축 + 신비→보라
-  const deltaHue =
+  const deltaHue = clamp(
     (E.warmth    - E.freshness) * 18
   + (E.nostalgia - E.amazement) *  8
   +  E.mystery                  * 12
-  -  6;
+  -  6,
+    -25, 25,
+  );
 
   // ΔSat: 경이·활기 → 비비드 / 평화·향수 → 뮤트
   const deltaSat = clamp(
     0.70
   + (E.amazement + E.vitality)  * 0.30
   - (E.peace     + E.nostalgia) * 0.18
-  +  E.grandeur                 * 0.08
-  , 0.50, 1.45,
+  +  E.grandeur                 * 0.08,
+    0.50, 1.45,
   );
 
   // ΔLight: 활기·신선 → 밝게 / 웅장·신비 → 어둡게
@@ -262,8 +261,8 @@ export function synthesizeParams(emotionScores) {
     (E.vitality + E.freshness) *  0.14
   - (E.grandeur + E.mystery)   *  0.12
   +  E.warmth                  *  0.05
-  -  0.03
-  , -0.20, +0.20,
+  -  0.03,
+    -0.20, +0.20,
   );
 
   // ΔContrast: 경이·웅장 → 하이콘트라스트 / 평화·향수 → 소프트
@@ -271,242 +270,124 @@ export function synthesizeParams(emotionScores) {
     0.80
   + (E.amazement + E.grandeur)  * 0.28
   - (E.peace     + E.nostalgia) * 0.15
-  +  E.mystery                  * 0.10
-  , 0.65, 1.45,
+  +  E.mystery                  * 0.10,
+    0.65, 1.45,
   );
 
   // ColorTemp: 따뜻함↑ → 골든/앰버, 향수↑ → 세피아, 신비↑ → 약간 차갑게
-  const colorTemp =
+  const colorTemp = clamp(
     (E.warmth    - E.freshness) * 1400
   +  E.nostalgia                *  700
-  -  E.mystery                  *  350;
+  -  E.mystery                  *  350,
+    -1500, 1500,
+  );
 
   // LightDir: 따뜻↔청량 + 활기↔평화
-  const lightDir =
+  const lightDir = clamp(
     (E.warmth   - E.freshness) * 25
-  + (E.vitality - E.peace)     * 10;
+  + (E.vitality - E.peace)     * 10,
+    -35, 35,
+  );
 
-  return {
-    deltaHue:      limit('deltaHue',      deltaHue),
-    deltaSat:      limit('deltaSat',      deltaSat),
-    deltaLight:    limit('deltaLight',    deltaLight),
-    deltaContrast: limit('deltaContrast', deltaContrast),
-    colorTemp:     limit('colorTemp',     colorTemp),
-    lightDir:      limit('lightDir',      lightDir),
+  // RGB 틴트 파생 (colorTemp → R/G/B 배수)
+  const n = clamp(colorTemp / 1500, -1, 1);
+  const rgbTint = {
+    r: clamp(1.0 + n *  0.14, 0.80, 1.20),
+    g: clamp(1.0 + n *  0.05, 0.90, 1.10),
+    b: clamp(1.0 - n *  0.18, 0.70, 1.25),
   };
+
+  return { deltaHue, deltaSat, deltaLight, deltaContrast, colorTemp, lightDir, rgbTint };
 }
 
 // =============================================================================
-// ⑦ 패널별 색채 적용
-//    (emotion-engine/panel-individualizer.js computePanelParams와 동일)
+// ⑥ 단일 색상 요소에 delta 적용 (SVG 현재 색상 기준)
+//    (svg-engine/color-calculator.js applyDeltaToHex와 동일 수식)
 // =============================================================================
 
 /**
- * @typedef {Object} PanelColor
- * @property {number} index    경승지 인덱스 (0~11)
- * @property {string} name     경승지 이름
- * @property {string} main     주색 hex (#RRGGBB)
- * @property {string} sub      보조색 hex (#RRGGBB)
- * @property {string} acc      강조색 hex (#RRGGBB)
- * @property {string} cssHSL   CSS hsl() 문자열 (main 기준)
- * @property {{h:number,s:number,l:number}} hsl  최종 HSL
- */
-
-/**
- * GlobalColorParams를 특정 경승지(spotIndex)에 적용하여
- * 최종 패널 색상(main/sub/acc)을 계산한다.
+ * SVG에서 읽은 현재 hex 색상에 감성 delta(글로벌 파라미터 × 패널 가중치
+ * + 패널 단위 노이즈 + 색온도 틴트)를 적용한 새 hex를 반환한다.
  *
- * [유일성 보장 메커니즘]
- *   ① 패널별 반응 가중치(PANEL_WEIGHT_MATRIX) — 같은 파라미터도 패널마다 다르게 반응
- *   ② 경승지 기본 팔레트(SPOT_BASE_PALETTES) — 각 경승지 고유 색상에서 출발
- *   ③ 다양성 시드 노이즈(noiseValue) — 결정론적 미세 노이즈로 최종 유일성 보장
+ * main/sub/acc 역할 구분이 없으므로, 'spot-{idx}-{n}'의 모든 n에
+ * 대해 이 함수를 동일하게 호출한다. 노이즈는 패널 단위(panelIndex)로
+ * 공유되어, 패널 내 모든 요소가 같은 비율로 이동한다.
  *
- * sub/acc는 main과 동일한 색조·채도 축에서 명도만 이동시켜 생성한다
- * (panel-individualizer.js extractColorFingerprint와 동일한 파생 방식).
- *
- * @param {number} spotIndex      0~11
- * @param {GlobalColorParams} params  synthesizeParams() 출력
- * @param {number} [seed=0]       다양성 시드 (preprocessor.diversitySeed)
- * @returns {PanelColor}
+ * @param {string} currentHex   SVG에서 읽은 현재 색상 ('#RRGGBB')
+ * @param {number} panelIndex   emotion-engine 인덱스 (0~11)
+ * @param {GlobalColorParams} gp  computeGlobalParams() 결과
+ * @param {number} [diversitySeed=0]  다양성 시드
+ * @returns {string}  delta 적용 후 hex ('#RRGGBB')
  *
  * @example
- * const params = synthesizeParams(emotionScores);
- * const panel0 = applyParamsToSpot(0, params, diversitySeed);
- * // panel0.main   → '#FF7A42'
- * // panel0.cssHSL → 'hsl(18.3, 92.1%, 58.4%)'
+ * const gp = computeGlobalParams(emotionScores);
+ * const newHex = applyDeltaToHex('#FF6635', 0, gp, diversitySeed);
  */
-export function applyParamsToSpot(spotIndex, params, seed = 0) {
-  const spot    = SPOT_BASE_PALETTES[clamp(Math.round(spotIndex), 0, 11)];
-  const weights = PANEL_WEIGHT_MATRIX[spot.index];
-  const base    = spot.mainHsl;
-  const i       = spot.index;
+export function applyDeltaToHex(currentHex, panelIndex, gp, diversitySeed = 0) {
+  const i  = clamp(Math.round(panelIndex), 0, 11);
+  const w  = PANEL_WEIGHTS[i];
+  const cur = hexToHsl(currentHex);
 
-  // 색조: 기본 + (글로벌 × 가중치) + 노이즈
-  const finalHue = wrapHue(
-    base.h
-    + params.deltaHue       * weights.hue
-    + noiseValue(seed, i, 0) * NOISE_AMP.hue,
+  // 색조: 현재값 + (글로벌ΔHue × 가중치) + 패널 단위 노이즈
+  const finalH = wrapHue(
+    cur.h
+    + gp.deltaHue * w.hue
+    + noiseValue(diversitySeed, i, 0) * NOISE_AMP.hue,
   );
 
-  // 채도: 지수 스케일링 (반응성 클수록 비선형 변화)
-  const finalSat = clamp(
-    base.s * Math.pow(params.deltaSat, weights.sat)
-    + noiseValue(seed, i, 1) * NOISE_AMP.sat,
+  // 채도: 지수 스케일링 (가중치가 클수록 비선형으로 더 강하게 반응)
+  const finalS = clamp(
+    cur.s * Math.pow(gp.deltaSat, w.sat)
+    + noiseValue(diversitySeed, i, 1) * NOISE_AMP.sat,
     0.05, 1.0,
   );
 
-  // 명도
-  const finalLight = clamp(
-    base.l
-    + params.deltaLight     * weights.light
-    + noiseValue(seed, i, 2) * NOISE_AMP.light,
+  // 명도: 선형 이동
+  const finalL = clamp(
+    cur.l
+    + gp.deltaLight * w.light
+    + noiseValue(diversitySeed, i, 2) * NOISE_AMP.light,
     0.08, 0.92,
   );
 
-  const main = hslToHex(finalHue, finalSat, finalLight);
-
-  // sub: 동일 색조·채도에서 명도만 낮춤 (그림자 톤)
-  const sub = hslToHex(finalHue, finalSat, clamp(finalLight - 0.12, 0.05, 0.85));
-
-  // acc: 색조를 +15° 이동, 채도 낮추고 명도 높임 (하이라이트 톤)
-  const acc = hslToHex(
-    finalHue + 15,
-    clamp(finalSat * 0.6, 0.05, 1.0),
-    clamp(finalLight + 0.22, 0.30, 0.92),
-  );
-
-  return {
-    index:  spot.index,
-    name:   spot.name,
-    main,
-    sub,
-    acc,
-    cssHSL: toCssHsl(finalHue, finalSat, finalLight),
-    hsl:    { h: finalHue, s: finalSat, l: finalLight },
-  };
+  // 색온도 틴트 적용
+  const raw = hslToHex(finalH, finalS, finalL);
+  return applyTintToHex(raw, gp.rgbTint);
 }
 
 // =============================================================================
-// ⑧ 12패널 전체 계산 (퍼블릭 API — app.js 직접 호출)
-// =============================================================================
-
-/**
- * 8차원 감성 점수와 다양성 시드로 울산 12경 전체 패널 색상을 계산한다.
- *
- * app.js의 폴백 경로에서 호출된다:
- *   서버 응답에 panelColors가 없을 때
- *   calculateAllPanelColors(emotionScores, diversitySeed)로
- *   동일한 형식의 결과를 직접 생성하여 SVG에 적용한다.
- *
- * @param {Object} emotionScores  8차원 감성 점수 (각 0~100)
- * @param {number} [diversitySeed=0]  다양성 시드
- * @returns {PanelColor[]}  길이 12, index 0~11 순서
- *
- * @example
- * const panelColors = calculateAllPanelColors(data.emotionScores, data.diversitySeed);
- * applyColorsToSVG(panelColors);
- */
-export function calculateAllPanelColors(emotionScores, diversitySeed = 0) {
-  const params = synthesizeParams(emotionScores ?? {});
-  return SPOT_BASE_PALETTES.map((spot) =>
-    applyParamsToSpot(spot.index, params, diversitySeed),
-  );
-}
-
-// =============================================================================
-// ⑨ 색온도 → CSS filter 변환
+// ⑦ 색온도 → CSS filter 변환
+//    (svg-engine/color-calculator.js colorTempToFilter와 동일)
 // =============================================================================
 
 /**
  * 색온도 오프셋(K)을 CSS filter 문자열로 변환한다.
  * #svg-container에 적용하여 전체 이미지에 색온도 틴트를 더한다.
  *
- * 변환 방식:
- *   colorTemp > 0 (따뜻함) → sepia + saturate로 골든/앰버 톤 강화
- *   colorTemp < 0 (차가움) → hue-rotate(blue 방향) + contrast로 쿨톤 강화
- *   |colorTemp| 작음        → 빈 문자열 (필터 미적용)
- *
  * @param {number} colorTemp  색온도 오프셋 (-1500 ~ +1500K)
  * @returns {string}  CSS filter 값 (필터 불필요 시 '')
  *
  * @example
- * colorTempToFilter(800);   // → 'sepia(0.18) saturate(1.12) brightness(1.02)'
- * colorTempToFilter(-700);  // → 'hue-rotate(-6deg) saturate(1.08)'
+ * colorTempToFilter(800);   // → 'sepia(0.27) saturate(1.16)'
+ * colorTempToFilter(-600);  // → 'hue-rotate(-8deg) saturate(0.94)'
  * colorTempToFilter(50);    // → ''
  */
 export function colorTempToFilter(colorTemp) {
-  const n = clamp((colorTemp ?? 0) / 1500, -1, 1);
+  const THRESHOLD = 80;
 
-  // 노이즈 수준의 작은 값은 필터 생략
-  if (Math.abs(n) < 0.04) return '';
+  if (Math.abs(colorTemp ?? 0) < THRESHOLD) return '';
+
+  const n = clamp(colorTemp / 1500, -1, 1);
 
   if (n > 0) {
-    // 따뜻한 방향 — 세피아·앰버 틴트
-    const sepia      = (n * 0.30).toFixed(2);
-    const saturate   = (1 + n * 0.18).toFixed(2);
-    const brightness = (1 + n * 0.04).toFixed(2);
-    return `sepia(${sepia}) saturate(${saturate}) brightness(${brightness})`;
+    const sepia    = +(n * 0.50).toFixed(2);
+    const saturate = +(1.0 + n * 0.30).toFixed(2);
+    return `sepia(${sepia}) saturate(${saturate})`;
+  } else {
+    const rotate   = +(n * 20).toFixed(1);
+    const saturate = +(1.0 + n * 0.15).toFixed(2);
+    return `hue-rotate(${rotate}deg) saturate(${saturate})`;
   }
-
-  // 차가운 방향 — 블루 계열 hue-rotate
-  const hueRotate = (n * 10).toFixed(1);   // n이 음수이므로 음의 회전
-  const saturate  = (1 + Math.abs(n) * 0.15).toFixed(2);
-  return `hue-rotate(${hueRotate}deg) saturate(${saturate})`;
-}
-
-// =============================================================================
-// ⑩ 보조 접근자
-// =============================================================================
-
-/**
- * 인덱스로 경승지 기본 팔레트 정보를 조회한다.
- * @param {number} spotIndex  0~11
- * @returns {{ index:number, name:string, main:string, sub:string, acc:string }|null}
- */
-export function getBaseSpot(spotIndex) {
-  return SPOT_BASE_PALETTES[spotIndex] ?? null;
-}
-
-/**
- * 모든 경승지의 기본 main 색상(hex)을 배열로 반환한다.
- * @returns {string[]}  길이 12
- */
-export function getAllBaseColors() {
-  return SPOT_BASE_PALETTES.map((s) => s.main);
-}
-
-// =============================================================================
-// ⑪ 디버그 유틸리티
-// =============================================================================
-
-/**
- * 계산 결과를 콘솔에 출력한다. (개발 전용)
- * @param {Object} emotionScores
- * @param {number} [diversitySeed=0]
- */
-export function debugPrintColors(emotionScores, diversitySeed = 0) {
-  /* eslint-disable no-console */
-  const params = synthesizeParams(emotionScores);
-  const panels = calculateAllPanelColors(emotionScores, diversitySeed);
-
-  console.group('🎨 color-engine — 클라이언트 계산 결과');
-  console.log(
-    `ΔHue:${params.deltaHue.toFixed(1)}° ΔSat:×${params.deltaSat.toFixed(2)} `
-    + `ΔLight:${params.deltaLight.toFixed(3)} ΔContrast:×${params.deltaContrast.toFixed(2)} `
-    + `ColorTemp:${params.colorTemp.toFixed(0)}K LightDir:${params.lightDir.toFixed(1)}°`,
-  );
-  console.log('colorTempToFilter:', colorTempToFilter(params.colorTemp) || '(없음)');
-  console.log('─'.repeat(60));
-
-  panels.forEach((p) => {
-    console.log(
-      `[${String(p.index).padStart(2, '0')}] ${p.name.padEnd(16)}`,
-      `main:${p.main}  sub:${p.sub}  acc:${p.acc}`,
-    );
-  });
-
-  console.groupEnd();
-  /* eslint-enable no-console */
 }
 
 // =============================================================================
@@ -514,11 +395,13 @@ export function debugPrintColors(emotionScores, diversitySeed = 0) {
 // =============================================================================
 
 export default {
-  synthesizeParams,
-  applyParamsToSpot,
-  calculateAllPanelColors,
+  computeGlobalParams,
+  applyDeltaToHex,
   colorTempToFilter,
-  getBaseSpot,
-  getAllBaseColors,
-  debugPrintColors,
+  hexToHsl,
+  hslToHex,
+  noiseValue,
+  PANEL_WEIGHTS,
+  SVG_ID_MAP,
+  SPOT_NAMES,
 };

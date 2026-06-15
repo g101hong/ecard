@@ -1,24 +1,41 @@
 /**
  * @fileoverview 울산 E-Card — SVG 인라인 렌더링 · 색채 패치 · 블러 제어
  * @module public/js/svg-renderer
- * @version 1.0.0
+ * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * 역할
+ * v2 변경 사항
  * ─────────────────────────────────────────────────────────────────
  *
- *   assets/stained-glass.svg 를 fetch로 불러와 #svg-container 에
- *   인라인 삽입하고, 이후 색채 패치·블러 해제·패널 강조를
- *   DOM 조작으로 직접 수행한다.
+ *   v1: 서버가 계산한 panelColors[12] (각 main/sub/acc hex)를
+ *       grad-spot-XX-{main,sub,acc} 3개 고정 stop에 그대로 적용
  *
- *   서버 svg-engine/svg-patcher.js 와 동일한 ID 체계를 사용하므로
- *   브라우저에서 보이는 색상과 PNG 저장 결과가 동일하게 재현된다.
+ *   v2:
+ *     ① id 형식: 'spot-{XX}-{N}' (XX:00~11, N:1,2,3... 가변)
+ *        - main/sub/acc 역할 구분 없음
+ *        - 패널(XX)당 색상 요소 개수는 SVG에서 자동 탐색
+ *          (querySelectorAll(`[id^="spot-XX-"]`))
+ *     ② 대상 요소가 <stop>이면 stop-color, 그 외(path/circle 등)면
+ *        fill 속성을 읽고 쓴다
+ *     ③ "SVG 현재 색상 기준" (케이스 B):
+ *        - loadSVG() 시점에 삽입된 *원본* SVG 텍스트를 _originalSvgText에
+ *          별도 보관
+ *        - applyDeltaColorsToSVG() 호출 시 항상 원본 텍스트를 기준으로
+ *          현재 색을 읽고 delta를 적용 → 결정론적, 누적 변경 없음
+ *        - resetSVG()는 이 원본 텍스트로 컨테이너를 다시 채워 완전히
+ *          복원한다
+ *
+ *   서버 svg-engine/svg-patcher.js 와 동일한 ID 체계·동일 수식
+ *   (color-engine.js)을 사용하므로 브라우저에서 보이는 색상과
+ *   PNG 저장 결과가 동일하게 재현된다.
  *
  * ─────────────────────────────────────────────────────────────────
  * [SVG ID 체계 — 경승지별_ID_및_채색방법.txt 기준]
  *
- *   각 경승지는 "spot-00" ~ "spot-11" 시작 문자를 포함하는
- *   ID를 가진 오브젝트(그라디언트·패널 그룹)로 구성된다.
+ *   각 경승지는 "spot-00" ~ "spot-11" 접두어를 가지며,
+ *   색상 조정 대상 요소는 'spot-{XX}-{N}' (N=1,2,3... 가변) 형식의
+ *   id를 가진다. 요소가 <stop>이면 stop-color, 그 외 도형이면
+ *   fill 속성이 변경 대상이다.
  *
  *   spot-00 : 태화강 국가정원과 십리대숲
  *   spot-01 : 대왕암공원
@@ -33,46 +50,35 @@
  *   spot-10 : 외고산 옹기마을
  *   spot-11 : 대운산 내원암 계곡
  *
- *   그라디언트 stop ID 패턴:
- *     grad-spot-XX-main / grad-spot-XX-sub / grad-spot-XX-acc
- *
- *   패널 그룹 ID 패턴:
- *     panel-spot-XX  (또는 id에 "spot-XX"가 포함된 요소)
+ *   패널 그룹 ID 패턴 (강조 효과용, 색상 변경과 무관):
+ *     panel-spot-XX  (또는 id에 "spot-XX"가 포함된 <g> 요소)
  *
  * ─────────────────────────────────────────────────────────────────
  * [emotion-engine 인덱스 ↔ SVG spot-XX 매핑]
  *
- *   /api/impression 이 반환하는 panelColors[i] (i = 0~11)는
- *   emotion-engine/constants/spot-palettes.js 순서(SPOTS 인덱스)이며
- *   SVG의 spot-XX 번호 체계와는 다르다. 이 모듈의 EMOTION_TO_SVG_SPOT
- *   배열이 그 변환을 담당한다.
- *
- *     emotion index 0 (간절곶 일출)            → spot-04
- *     emotion index 1 (대왕암공원)              → spot-01
- *     emotion index 2 (강동 몽돌해변)           → spot-06
- *     emotion index 3 (장생포 고래문화마을)     → spot-09
- *     emotion index 4 (외고산 옹기마을)         → spot-10
- *     emotion index 5 (반구대 암각화)           → spot-05
- *     emotion index 6 (대운산 내원암 계곡)      → spot-11
- *     emotion index 7 (울산대교)                → spot-08
- *     emotion index 8 (울산대공원)              → spot-07
- *     emotion index 9 (태화강 국가정원·십리대숲) → spot-00
- *     emotion index 10 (신불산 억새평원)        → spot-03
- *     emotion index 11 (가지산 사계)            → spot-02
+ *   /api/impression 이 반환하는 emotionScores, diversitySeed를 받아
+ *   이 모듈이 직접 SVG의 spot-XX-N 요소에 색채를 계산·적용한다.
+ *   color-engine.js의 SVG_ID_MAP이 emotion-engine 인덱스(0~11)를
+ *   SVG spot-XX 문자열로 변환한다.
  *
  * ─────────────────────────────────────────────────────────────────
  * [공개 API]
  *
- *   loadSVG()                  SVG fetch + 인라인 삽입 (블러 상태로 시작)
- *   applyColorsToSVG(colors)   panelColors[12] → <stop> stop-color 반영
- *   revealSVG()                블러 해제 (CSS transition)
- *   resetSVG()                 기본 팔레트로 복원 + 블러 재적용
- *   highlightPanel(spotIndex)  매칭 경승지 패널에 강조 효과 적용
+ *   loadSVG()                              SVG fetch + 인라인 삽입 (블러 상태로 시작)
+ *   applyDeltaColorsToSVG(scores, seed)    원본 SVG 현재 색 기준 delta 적용
+ *   revealSVG()                            블러 해제 (CSS transition)
+ *   resetSVG()                             원본 SVG로 완전 복원 + 블러 재적용
+ *   highlightPanel(spotIndex)              매칭 경승지 패널에 강조 효과 적용
  */
 
 'use strict';
 
-import { SPOTS } from './spots.js';
+import {
+  computeGlobalParams,
+  applyDeltaToHex,
+  SVG_ID_MAP,
+  SPOT_NAMES,
+} from './color-engine.js';
 
 // =============================================================================
 // ① 설정 상수
@@ -95,26 +101,17 @@ const SVG_CONFIG = Object.freeze({
   PANEL_PREFIX: 'panel-',
 });
 
+/** hex 색상 형식 검증 ('#RRGGBB' 또는 '#RGB') */
+const HEX_RE = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/;
+
 /**
- * emotion-engine 인덱스(0~11, spot-palettes.js 순서) → SVG spot-XX 번호
- * 경승지별_ID_및_채색방법.txt 매핑 기준
- *
- * @type {number[]}
+ * 색상 속성을 읽고 쓸 때 사용하는 태그별 속성명.
+ * <stop> 요소는 stop-color, 그 외(path/circle/rect/ellipse/polygon 등)는 fill.
  */
-const EMOTION_TO_SVG_SPOT = [
-  4,  // 0  간절곶 일출            → spot-04
-  1,  // 1  대왕암공원              → spot-01
-  6,  // 2  강동 몽돌해변           → spot-06
-  9,  // 3  장생포 고래문화마을     → spot-09
-  10, // 4  외고산 옹기마을         → spot-10
-  5,  // 5  반구대 암각화           → spot-05
-  11, // 6  대운산 내원암 계곡      → spot-11
-  8,  // 7  울산대교                → spot-08
-  7,  // 8  울산대공원              → spot-07
-  0,  // 9  태화강 국가정원·십리대숲 → spot-00
-  3,  // 10 신불산 억새평원         → spot-03
-  2,  // 11 가지산 사계             → spot-02
-];
+const COLOR_ATTR_BY_TAG = {
+  stop: 'stop-color',
+};
+const DEFAULT_COLOR_ATTR = 'fill';
 
 // =============================================================================
 // ② 내부 상태
@@ -123,8 +120,20 @@ const EMOTION_TO_SVG_SPOT = [
 /** 마지막으로 강조된 SVG spot-XX 번호 (resetSVG에서 해제용) */
 let _lastHighlightedSvgSpot = null;
 
-/** SVG 원본 fetch 캐시 (재요청 방지) */
-let _svgCache = null;
+/** SVG 원본 fetch 캐시 (네트워크 재요청 방지) */
+let _svgFetchCache = null;
+
+/**
+ * loadSVG() 시점에 #svg-container에 삽입된 *원본* SVG 텍스트.
+ *
+ * 케이스 B(SVG 현재 색상 기준)의 핵심: applyDeltaColorsToSVG()는
+ * 매번 이 원본 텍스트를 기준으로 "현재 색"을 읽어 delta를 계산한다.
+ * 컨테이너에 실제로 표시 중인 SVG(이미 패치되어 있을 수 있음)를
+ * 기준으로 삼지 않는다 — 그렇게 하면 누적 변경이 발생한다.
+ *
+ * @type {string|null}
+ */
+let _originalSvgText = null;
 
 // =============================================================================
 // ③ DOM 헬퍼
@@ -139,21 +148,32 @@ function _container() {
 }
 
 /**
- * 두 자리 패딩 spot 번호 문자열을 생성한다.
- * @param {number} n  0~11
- * @returns {string}  '00' ~ '11'
+ * 요소의 태그 종류에 따라 색상이 저장된 속성명을 반환한다.
+ * @param {Element} el
+ * @returns {string}
  */
-function _pad(n) {
-  return String(n).padStart(2, '0');
+function _colorAttrName(el) {
+  const tag = el.tagName.toLowerCase();
+  return COLOR_ATTR_BY_TAG[tag] ?? DEFAULT_COLOR_ATTR;
 }
 
 /**
- * emotion-engine 인덱스를 SVG spot-XX 번호로 변환한다.
- * @param {number} emotionIndex  0~11
- * @returns {number}  대응하는 SVG spot 번호 (0~11)
+ * 요소의 현재 색상값을 읽는다. hex 형식('#RRGGBB')이 아니면 null.
+ * @param {Element} el
+ * @returns {{ attr:string, hex:string }|null}
  */
-function _toSvgSpot(emotionIndex) {
-  return EMOTION_TO_SVG_SPOT[emotionIndex] ?? emotionIndex;
+function _readColor(el) {
+  const attr = _colorAttrName(el);
+  const val  = el.getAttribute(attr);
+
+  if (!val || !HEX_RE.test(val.trim())) return null;
+
+  let hex = val.trim();
+  if (hex.length === 4) {
+    hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+  }
+
+  return { attr, hex };
 }
 
 // =============================================================================
@@ -164,9 +184,13 @@ function _toSvgSpot(emotionIndex) {
  * stained-glass.svg 를 fetch로 불러와 #svg-container 에 인라인 삽입한다.
  *
  * 인라인 삽입을 사용하는 이유:
- *   <img src="..."> 로는 내부 <stop> 요소의 stop-color 속성을
+ *   <img src="..."> 로는 내부 색상 속성(stop-color/fill)을
  *   JS에서 직접 변경할 수 없다. SVG를 DOM에 직접 삽입해야
- *   getElementById로 그라디언트 stop을 조작할 수 있다.
+ *   querySelectorAll로 'spot-XX-N' 요소를 조작할 수 있다.
+ *
+ * 삽입된 SVG 텍스트는 _originalSvgText에 보관되어, 이후
+ * applyDeltaColorsToSVG()가 항상 이 "원본 색상"을 기준으로
+ * delta를 계산할 수 있게 한다 (케이스 B).
  *
  * 삽입 직후 컨테이너에 BLURRED_CLASS를 추가하여
  * 색채 입히기 전까지 블러 상태를 유지한다.
@@ -185,7 +209,7 @@ export async function loadSVG() {
   }
 
   // 캐시된 SVG 텍스트가 있으면 재사용 (재호출 시 네트워크 절약)
-  let svgText = _svgCache;
+  let svgText = _svgFetchCache;
 
   if (!svgText) {
     const res = await fetch(SVG_CONFIG.SVG_URL);
@@ -193,8 +217,11 @@ export async function loadSVG() {
       throw new Error(`[svg-renderer] SVG 로드 실패: HTTP ${res.status}`);
     }
     svgText = await res.text();
-    _svgCache = svgText;
+    _svgFetchCache = svgText;
   }
+
+  // 케이스 B: 원본 텍스트를 별도 보관 (이후 모든 delta 계산의 기준)
+  _originalSvgText = svgText;
 
   container.innerHTML = svgText;
 
@@ -213,75 +240,99 @@ export async function loadSVG() {
 }
 
 // =============================================================================
-// ⑤ 색채 패치
+// ⑤ 색채 패치 (케이스 B — 원본 SVG 현재 색상 기준)
 // =============================================================================
 
 /**
- * panelColors[12] 를 SVG <stop> 요소의 stop-color 속성에 직접 반영한다.
+ * emotionScores와 diversitySeed를 받아, 원본 SVG(_originalSvgText)에
+ * 기록된 "현재 색상"을 기준으로 12경 각 패널의 'spot-XX-N' 요소에
+ * 감성 delta를 적용한다.
  *
- * panelColors 는 emotion-engine 인덱스(0~11, spot-palettes.js 순서)이며
- * 내부적으로 EMOTION_TO_SVG_SPOT 매핑을 통해 SVG의 spot-XX 그라디언트로
- * 변환된다.
+ * 처리 흐름:
+ *   1. _originalSvgText를 파싱하여 임시 DOM(DOMParser) 생성
+ *      → 화면에 표시 중인(이미 패치되었을 수 있는) DOM이 아니라
+ *        항상 원본에서 "현재 색"을 읽는다 (누적 변경 방지)
+ *   2. computeGlobalParams(emotionScores)로 글로벌 파라미터 계산
+ *   3. emotion-engine 인덱스(0~11) 순회:
+ *      svgSpot = SVG_ID_MAP[i] (예: 'spot-04')
+ *      임시 DOM에서 [id^="spot-04-"] 요소들의 현재 색을 읽어
+ *      applyDeltaToHex()로 새 hex 계산
+ *   4. 계산된 새 hex를 *실제 화면(#svg-container)*의 동일 id 요소에 적용
  *
- * 각 패널의 그라디언트는 3개 stop으로 구성된다:
- *   grad-spot-XX-acc   (offset 0%)   — 강조색
- *   grad-spot-XX-main  (offset 60%)  — 주색
- *   grad-spot-XX-sub   (offset 100%) — 보조색
+ * CSS의 `stop, [fill] { transition: ... }` 류 규칙에 의해
+ * 색상이 부드럽게 전환되도록 구성할 수 있다 (animations.css 참조).
  *
- * CSS의 `stop { transition: stop-color 0.8s ease; }` 규칙에 의해
- * 색상이 부드럽게 전환된다 (animations.css 참조).
- *
- * @param {Array<{ index:number, main:string, sub:string, acc:string }>} panelColors
- *   길이 12, index 순서는 emotion-engine 인덱스(0~11)
- * @returns {{ applied: number, missing: string[] }}
- *   applied: 정상 반영된 패널 수, missing: 찾지 못한 stop ID 목록
+ * @param {Object} emotionScores  8차원 감성 점수 (0~100)
+ * @param {number} [diversitySeed=0]  다양성 시드
+ * @returns {{
+ *   applied:number, skipped:number, emptyPanels:string[],
+ *   panelColors: Array<{ index:number, svgId:string, name:string, color:string|null }>,
+ * }}
+ *   applied: 색상이 변경된 요소 수
+ *   skipped: hex 형식이 아니라 건너뛴 요소 수
+ *   emptyPanels: 'spot-XX-N' 요소가 하나도 없는 패널의 svgId 목록
+ *   panelColors: 패널별 대표색(해당 패널의 첫 번째 색상 요소의 새 hex) —
+ *                팔레트 스트립 등 UI 표시용. 요소가 없으면 color:null
  *
  * @example
- * const result = applyColorsToSVG(data.panelColors);
- * // result.applied → 12 (모두 반영됨)
- * // result.missing → [] (누락 없음)
+ * const result = applyDeltaColorsToSVG(data.emotionScores, data.diversitySeed);
+ * // result.applied → 변경된 요소 개수
+ * // result.panelColors[0] → { index:0, svgId:'spot-04', name:'간절곶 일출', color:'#FF7A4F' }
  */
-export function applyColorsToSVG(panelColors) {
+export function applyDeltaColorsToSVG(emotionScores, diversitySeed = 0) {
   const container = _container();
-  const missing    = [];
-  let   applied    = 0;
+  const result = { applied: 0, skipped: 0, emptyPanels: [], panelColors: [] };
 
-  if (!container || !Array.isArray(panelColors)) {
-    return { applied, missing };
-  }
+  if (!container || !_originalSvgText) return result;
 
-  panelColors.forEach((panel) => {
-    const emotionIdx = panel.index;
-    if (typeof emotionIdx !== 'number') return;
+  // ── 원본 SVG를 별도 DOM으로 파싱 (현재 화면 상태와 분리) ─────────
+  const parser = new DOMParser();
+  const originalDoc = parser.parseFromString(_originalSvgText, 'image/svg+xml');
 
-    const svgSpot = _pad(_toSvgSpot(emotionIdx));
+  const gp = computeGlobalParams(emotionScores ?? {});
 
-    const stopMap = {
-      main: panel.main,
-      sub:  panel.sub,
-      acc:  panel.acc,
-    };
+  for (let emotionIdx = 0; emotionIdx <= 11; emotionIdx++) {
+    const svgSpot = SVG_ID_MAP[emotionIdx]; // 예: 'spot-04'
 
-    let panelOk = true;
+    // 원본 DOM에서 패널의 모든 색상 요소를 자동 탐색 (가변 개수)
+    const originalElements = originalDoc.querySelectorAll(`[id^="${svgSpot}-"]`);
 
-    Object.entries(stopMap).forEach(([key, color]) => {
-      if (!color) return;
+    if (originalElements.length === 0) {
+      result.emptyPanels.push(svgSpot);
+      result.panelColors.push({
+        index: emotionIdx, svgId: svgSpot, name: SPOT_NAMES[emotionIdx], color: null,
+      });
+      continue;
+    }
 
-      const stopId = `grad-spot-${svgSpot}-${key}`;
-      const stopEl = container.querySelector(`#${stopId}`);
+    let representativeColor = null;
 
-      if (stopEl) {
-        stopEl.setAttribute('stop-color', color);
-      } else {
-        panelOk = false;
-        missing.push(stopId);
+    originalElements.forEach((origEl) => {
+      const current = _readColor(origEl);
+      if (!current) {
+        result.skipped++;
+        return;
       }
+
+      const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
+
+      // 화면에 실제 표시 중인 동일 id 요소에 적용
+      const liveEl = container.querySelector(`#${CSS.escape(origEl.id)}`);
+      if (liveEl) {
+        liveEl.setAttribute(current.attr, newHex);
+        result.applied++;
+      }
+
+      // 패널 대표색 — 첫 번째로 성공 처리된 요소의 새 hex
+      if (representativeColor === null) representativeColor = newHex;
     });
 
-    if (panelOk) applied++;
-  });
+    result.panelColors.push({
+      index: emotionIdx, svgId: svgSpot, name: SPOT_NAMES[emotionIdx], color: representativeColor,
+    });
+  }
 
-  return { applied, missing };
+  return result;
 }
 
 // =============================================================================
@@ -298,7 +349,7 @@ export function applyColorsToSVG(panelColors) {
  * #blur-hint("소감을 입력하면...") 가 존재하면 함께 숨긴다.
  *
  * @example
- * applyColorsToSVG(data.panelColors);
+ * applyDeltaColorsToSVG(data.emotionScores, data.diversitySeed);
  * revealSVG();
  */
 export function revealSVG() {
@@ -316,36 +367,44 @@ export function revealSVG() {
 // =============================================================================
 
 /**
- * SVG를 기본 팔레트(spots.js)로 복원하고 블러 상태로 되돌린다.
+ * SVG를 원본 상태(_originalSvgText)로 완전히 복원하고 블러 상태로 되돌린다.
  *
  * "다시 쓰기" 버튼 클릭 시 호출되어
- * 이전 소감으로 생성된 색채를 지우고 초기 화면으로 복귀한다.
+ * 이전 소감으로 적용된 색채를 지우고 초기 화면으로 복귀한다.
+ *
+ * v1과 달리 별도의 "기본 팔레트 상수"가 없으므로, 원본 SVG 텍스트를
+ * 그대로 다시 삽입하는 방식으로 복원한다 — 이는 _originalSvgText가
+ * 곧 "기본 팔레트"의 단일 진실 소스이기 때문이다.
  *
  * 처리 내용:
- *   1. SPOTS 기본 팔레트(main/sub/acc)로 모든 <stop> 복원
- *   2. 강조(highlight) 효과 해제
- *   3. #svg-container 에 blurred 클래스 재적용
- *   4. #blur-hint 다시 표시
+ *   1. _originalSvgText로 #svg-container.innerHTML 재설정
+ *   2. 반응형 속성 재적용 (width/height 100%)
+ *   3. 강조(highlight) 효과 해제
+ *   4. #svg-container 에 blurred 클래스 재적용
+ *   5. #blur-hint 다시 표시
  *
  * @example
  * resetSVG();
- * // → 모든 패널이 SPOTS 기본 색상으로 돌아가고 블러 처리됨
+ * // → SVG가 원본 색상으로 돌아가고 블러 처리됨
  */
 export function resetSVG() {
   const container = _container();
-  if (!container) return;
+  if (!container || !_originalSvgText) return;
 
-  // ── 기본 팔레트로 복원 ────────────────────────────────────────
-  const basePanelColors = SPOTS.map((spot) => ({
-    index: spot.index,
-    main:  spot.hex.main,
-    sub:   spot.hex.sub,
-    acc:   spot.hex.acc,
-  }));
-  applyColorsToSVG(basePanelColors);
+  // ── 원본 텍스트로 완전 복원 ───────────────────────────────────
+  container.innerHTML = _originalSvgText;
+
+  const svgEl = container.querySelector('svg');
+  if (svgEl) {
+    svgEl.setAttribute('width', '100%');
+    svgEl.setAttribute('height', '100%');
+    svgEl.removeAttribute('style');
+  }
 
   // ── 강조 효과 해제 ────────────────────────────────────────────
-  _clearHighlight(container);
+  _lastHighlightedSvgSpot = null;
+  container.querySelectorAll(`.${SVG_CONFIG.HIGHLIGHT_CLASS}`)
+    .forEach((el) => el.classList.remove(SVG_CONFIG.HIGHLIGHT_CLASS));
 
   // ── 블러 재적용 ───────────────────────────────────────────────
   container.classList.add(SVG_CONFIG.BLURRED_CLASS);
@@ -384,7 +443,9 @@ export function highlightPanel(spotIndex) {
 
   _clearHighlight(container);
 
-  const svgSpot = _pad(_toSvgSpot(spotIndex));
+  const svgSpot = SVG_ID_MAP[spotIndex];
+  if (!svgSpot) return;
+
   const panelEl = _findPanelElement(container, svgSpot);
 
   if (panelEl) {
@@ -399,7 +460,6 @@ export function highlightPanel(spotIndex) {
  */
 function _clearHighlight(container) {
   if (_lastHighlightedSvgSpot === null) {
-    // 혹시 클래스가 남아있는 모든 요소를 일괄 정리 (안전망)
     container.querySelectorAll(`.${SVG_CONFIG.HIGHLIGHT_CLASS}`)
       .forEach((el) => el.classList.remove(SVG_CONFIG.HIGHLIGHT_CLASS));
     return;
@@ -412,19 +472,19 @@ function _clearHighlight(container) {
 }
 
 /**
- * spot-XX 번호로 패널 그룹 요소를 찾는다.
+ * svgSpot('spot-XX')으로 패널 그룹 요소를 찾는다.
  *
  * @param {HTMLElement} container
- * @param {string} svgSpot  '00' ~ '11'
+ * @param {string} svgSpot  'spot-00' ~ 'spot-11'
  * @returns {Element|null}
  */
 function _findPanelElement(container, svgSpot) {
   // 1순위: id="panel-spot-XX"
-  const byId = container.querySelector(`#${SVG_CONFIG.PANEL_PREFIX}spot-${svgSpot}`);
+  const byId = container.querySelector(`#${SVG_CONFIG.PANEL_PREFIX}${svgSpot}`);
   if (byId) return byId;
 
   // 2순위: id에 "spot-XX"를 포함하는 그룹(<g>) 요소
-  const candidates = container.querySelectorAll(`g[id*="spot-${svgSpot}"]`);
+  const candidates = container.querySelectorAll(`g[id*="${svgSpot}"]`);
   if (candidates.length > 0) return candidates[0];
 
   return null;
@@ -435,8 +495,8 @@ function _findPanelElement(container, svgSpot) {
 // =============================================================================
 
 /**
- * SVG 내 그라디언트 stop 적용 현황을 콘솔에 출력한다. (개발 전용)
- * 12경 전체에 대해 grad-spot-XX-{main,sub,acc} 존재 여부를 점검한다.
+ * SVG 내 'spot-XX-N' 색상 요소 적용 현황을 콘솔에 출력한다. (개발 전용)
+ * 12경 전체에 대해 spot-XX 접두어 요소 존재 여부 및 개수를 점검한다.
  *
  * @example
  * debugCheckSvgIds();
@@ -452,20 +512,15 @@ export function debugCheckSvgIds() {
   console.group('🔍 svg-renderer — SVG ID 점검');
 
   for (let emotionIdx = 0; emotionIdx <= 11; emotionIdx++) {
-    const svgSpot = _pad(_toSvgSpot(emotionIdx));
-    const spotName = SPOTS[emotionIdx]?.name ?? `emotion#${emotionIdx}`;
+    const svgSpot = SVG_ID_MAP[emotionIdx];
+    const spotName = SPOT_NAMES[emotionIdx] ?? `emotion#${emotionIdx}`;
 
-    const stops = ['main', 'sub', 'acc'].map((key) => {
-      const id = `grad-spot-${svgSpot}-${key}`;
-      const found = !!container.querySelector(`#${id}`);
-      return `${key}:${found ? '✅' : '❌'}`;
-    });
-
-    const panelEl = _findPanelElement(container, svgSpot);
+    const elements = container.querySelectorAll(`[id^="${svgSpot}-"]`);
+    const panelEl  = _findPanelElement(container, svgSpot);
 
     console.log(
-      `emotion[${emotionIdx}] ${spotName.padEnd(16)} → spot-${svgSpot}`,
-      stops.join(' '),
+      `emotion[${emotionIdx}] ${spotName.padEnd(16)} → ${svgSpot}-N`,
+      `요소:${elements.length}개`,
       `panel:${panelEl ? '✅' : '❌'}`,
     );
   }
@@ -480,10 +535,10 @@ export function debugCheckSvgIds() {
 
 export default {
   loadSVG,
-  applyColorsToSVG,
+  applyDeltaColorsToSVG,
   revealSVG,
   resetSVG,
   highlightPanel,
   debugCheckSvgIds,
-  EMOTION_TO_SVG_SPOT,
+  SVG_ID_MAP,
 };

@@ -18,10 +18,8 @@
 // =============================================================================
 
 import { SPOTS }                          from './spots.js';
-import { calculateAllPanelColors,
-         colorTempToFilter }              from './color-engine.js';
 import { loadSVG,
-         applyColorsToSVG,
+         applyDeltaColorsToSVG,
          revealSVG,
          resetSVG,
          highlightPanel }                 from './svg-renderer.js';
@@ -180,17 +178,13 @@ async function onSubmit() {
     const data = await analyzeImpression(text);
     lastResult = data;
 
-    // ── SVG 색채 적용 ──────────────────────────────────────────────
-    if (data.panelColors && data.panelColors.length === 12) {
-      applyColorsToSVG(data.panelColors);
-    } else if (data.emotionScores) {
-      // 클라이언트 사이드 폴백 계산
-      const fallbackColors = calculateAllPanelColors(
-        data.emotionScores,
-        data.diversitySeed ?? 0,
-      );
-      applyColorsToSVG(fallbackColors);
-    }
+    // ── SVG 색채 적용 (v2: SVG 현재 색상 기준 delta 적용) ──────────
+    // emotionScores + diversitySeed만으로 SVG 'spot-XX-N' 요소의
+    // 현재 색에서 직접 계산·적용한다 (서버 panelColors 불필요).
+    const colorResult = applyDeltaColorsToSVG(
+      data.emotionScores,
+      data.diversitySeed ?? 0,
+    );
 
     // ── SVG 블러 해제 애니메이션 ──────────────────────────────────
     revealSVG();
@@ -213,7 +207,7 @@ async function onSubmit() {
     }
 
     // ── 팔레트 스트립 ─────────────────────────────────────────────
-    renderPaletteStrip(data.panelColors ?? []);
+    renderPaletteStrip(colorResult.panelColors);
 
     // ── 결과 렌더링 ───────────────────────────────────────────────
     renderResult(data);
@@ -366,22 +360,22 @@ function renderResult(data) {
 
 /**
  * 12개 패널 색상을 가로 스트립으로 표시한다.
- * @param {Array<{main:string}>} panelColors
+ * @param {Array<{index:number, svgId:string, name:string, color:string|null}>} panelColors
  */
 function renderPaletteStrip(panelColors) {
   if (!panelColors || panelColors.length === 0) return;
 
   elPaletteStrip.innerHTML = '';
 
-  panelColors.forEach((panel, i) => {
+  panelColors.forEach((panel) => {
     const chip = document.createElement('div');
     chip.className   = 'palette-chip';
-    chip.title       = SPOTS[i]?.name ?? `패널 ${i}`;
-    chip.style.background = panel.main ?? panel.cssHSL ?? '#888';
+    chip.title       = panel.name ?? SPOTS[panel.index]?.name ?? `패널 ${panel.index}`;
+    chip.style.background = panel.color ?? '#888';
 
     chip.addEventListener('click', () => {
-      highlightPanel(i);
-      showSpotLabel(i);
+      highlightPanel(panel.index);
+      showSpotLabel(panel.index);
     });
 
     elPaletteStrip.appendChild(chip);
