@@ -152,16 +152,28 @@ export function clearSvgCache() {
 // =============================================================================
 
 /**
- * 요소의 태그 종류에 따라 색상이 저장된 속성명을 반환한다.
- * <stop> → 'stop-color', 그 외 → 'fill'
- *
- * @param {Element} el
- * @returns {string}
+ * 요소 자체 또는 내부에서 실제 색상을 보유한 요소 목록을 반환한다.
+ * Inkscape에서 <a>/<g>에 spot ID를 부여한 경우 내부 요소를 탐색한다.
  */
+const COLOR_ELEMENTS = new Set(['path','rect','circle','ellipse','polygon','polyline','stop','use']);
+
+function _resolveColorElements(el) {
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'a' || tag === 'g') {
+    const children = Array.from(el.querySelectorAll(
+      'path, rect, circle, ellipse, polygon, polyline, stop'
+    ));
+    return children.length > 0 ? children : [];
+  }
+  if (COLOR_ELEMENTS.has(tag)) return [el];
+  return [];
+}
+
 function _colorAttrName(el) {
   const tag = el.tagName.toLowerCase();
   return COLOR_ATTR_BY_TAG[tag] ?? DEFAULT_COLOR_ATTR;
 }
+
 
 /**
  * 요소의 현재 색상값을 읽는다.
@@ -333,17 +345,20 @@ export async function patchSVG(emotionScores, diversitySeed) {
     }
 
     elements.forEach((el) => {
-      // doc 전달 → url(#gradientId) 참조 자동 추적
-      const current = _readColor(el, doc);
-      if (!current) {
-        totalSkipped++;
-        return;
-      }
+      // <a>/<g> 이면 내부 색상 요소를 탐색, 직접 요소이면 자신을 사용
+      const colorEls = _resolveColorElements(el);
+      if (colorEls.length === 0) { totalSkipped++; return; }
 
-      const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
-      // _applyColor 사용 → 그라디언트이면 모든 <stop> stop-color 일괄 변경
-      _applyColor(el, newHex, current, doc);
-      totalElements++;
+      colorEls.forEach((colorEl) => {
+        // doc 전달 → url(#gradientId) 참조 자동 추적
+        const current = _readColor(colorEl, doc);
+        if (!current) { totalSkipped++; return; }
+
+        const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
+        // _applyColor 사용 → 그라디언트이면 모든 <stop> stop-color 일괄 변경
+        _applyColor(colorEl, newHex, current, doc);
+        totalElements++;
+      });
     });
   }
 
