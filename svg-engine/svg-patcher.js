@@ -164,24 +164,103 @@ function _colorAttrName(el) {
 }
 
 /**
- * 요소의 현재 색상값을 읽는다. hex 형식('#RRGGBB')이 아니면 null.
+ * 요소의 현재 색상값을 읽는다.
  *
- * @param {Element} el
- * @returns {{ attr:string, hex:string }|null}
+ * 1) fill/stop-color가 직접 hex('#RRGGBB') → 즉시 반환
+ * 2) style 인라인에서 fill/stop-color hex 추출
+ * 3) fill="url(#gradientId)" → gradient의 첫 번째 <stop> stop-color를 읽음
+ *    (Inkscape가 생성하는 그라디언트 참조 패턴 지원)
+ *
+ * @param {Element}  el       색상을 읽을 요소
+ * @param {Document} ownerDoc 요소가 속한 SVG Document (gradient 탐색용)
+ * @returns {{ attr:string, hex:string, isGradient:boolean,
+ *             gradientId:string|null }|null}
  */
-function _readColor(el) {
+function _readColor(el, ownerDoc) {
   const attr = _colorAttrName(el);
-  const val  = el.getAttribute(attr);
+  const val  = (el.getAttribute(attr) ?? '').trim();
 
-  if (!val || !HEX_RE.test(val.trim())) return null;
-
-  let hex = val.trim();
-  // 3자리 단축 hex('#RGB') → 6자리로 확장
-  if (hex.length === 4) {
-    hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+  // ── 케이스 1: 직접 hex ────────────────────────────────────────
+  if (HEX_RE.test(val)) {
+    let hex = val;
+    if (hex.length === 4) {
+      hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+    }
+    return { attr, hex, isGradient: false, gradientId: null };
   }
 
-  return { attr, hex };
+  // ── 케이스 2: style 인라인에서 fill/stop-color hex 추출 ────────
+  const styleVal = el.getAttribute('style') ?? '';
+  const styleHex = styleVal.match(/(?:fill|stop-color)\s*:\s*(#[0-9a-fA-F]{3,6})/)?.[1];
+  if (styleHex && HEX_RE.test(styleHex)) {
+    let hex = styleHex;
+    if (hex.length === 4) {
+      hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+    }
+    return { attr: 'style', hex, isGradient: false, gradientId: null };
+  }
+
+  // ── 케이스 3: url(#gradientId) → gradient <stop> 추적 ─────────
+  const urlMatch = val.match(/^url\(#([^)]+)\)$/)
+    ?? styleVal.match(/(?:fill|stop-color)\s*:\s*url\(#([^)]+)\)/);
+
+  if (urlMatch && ownerDoc) {
+    const gradientId = urlMatch[1];
+    const gradEl = ownerDoc.getElementById(gradientId);
+    if (gradEl) {
+      const firstStop = gradEl.querySelector('stop');
+      if (firstStop) {
+        const scVal = (firstStop.getAttribute('stop-color') ?? '').trim();
+        if (HEX_RE.test(scVal)) {
+          let hex = scVal;
+          if (hex.length === 4) {
+            hex = '#' + [...hex.slice(1)].map((c) => c + c).join('');
+          }
+          return { attr, hex, isGradient: true, gradientId };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 요소에 새 색상을 적용한다.
+ * - isGradient=true : gradient의 모든 <stop>에 stop-color 일괄 적용
+ *   (첫 stop은 newHex, 이후 stop은 명도를 약간 낮춰 자연스러운 그라디언트 유지)
+ * - isGradient=false: fill 또는 stop-color 속성에 직접 적용
+ */
+function _applyColor(el, newHex, colorInfo, doc) {
+  if (colorInfo.isGradient && colorInfo.gradientId && doc) {
+    const gradEl = doc.getElementById(colorInfo.gradientId);
+    if (gradEl) {
+      const stops = gradEl.querySelectorAll('stop');
+      stops.forEach((stop, i) => {
+        if (i === 0) {
+          stop.setAttribute('stop-color', newHex);
+        } else {
+          stop.setAttribute('stop-color', _darken(newHex, i * 0.12));
+        }
+      });
+      return;
+    }
+  }
+  el.setAttribute(colorInfo.attr, newHex);
+}
+
+/**
+ * hex 색상을 ratio만큼 어둡게 한다.
+ * @param {string} hex
+ * @param {number} ratio  0~1
+ * @returns {string}
+ */
+function _darken(hex, ratio) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const d = (v) => Math.max(0, Math.round(v * (1 - ratio)));
+  return '#' + [d(r), d(g), d(b)].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
 // =============================================================================
@@ -254,14 +333,16 @@ export async function patchSVG(emotionScores, diversitySeed) {
     }
 
     elements.forEach((el) => {
-      const current = _readColor(el);
+      // doc 전달 → url(#gradientId) 참조 자동 추적
+      const current = _readColor(el, doc);
       if (!current) {
         totalSkipped++;
-        return; // hex 형식이 아니면 건너뜀 (예: fill="none", url(#...) 등)
+        return;
       }
 
       const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
-      el.setAttribute(current.attr, newHex);
+      // _applyColor 사용 → 그라디언트이면 모든 <stop> stop-color 일괄 변경
+      _applyColor(el, newHex, current, doc);
       totalElements++;
     });
   }
