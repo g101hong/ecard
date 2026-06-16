@@ -19,7 +19,7 @@
  *       - 이모지 추출 (문자 목록만 — 해석은 AI가)
  *       - 다양성 시드 (결정론적 해시)
  *
- *   ❌ 제거 → claude-extractor.js AI 프롬프트로 이전:
+ *   ❌ 제거 → ai-extractor.js AI 프롬프트로 이전:
  *       - 시간/계절/동행자 맥락 키워드 사전
  *       - 이모지 감성 분류
  *       - 감성 부스터 사전
@@ -74,7 +74,7 @@ const EMOJI_REGEX = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
 /**
  * 텍스트에서 이모지 문자 목록을 추출한다.
  * 이 단계에서는 이모지의 의미를 해석하지 않는다.
- * 해석은 claude-extractor.js AI 프롬프트가 담당한다.
+ * 해석은 ai-extractor.js AI 프롬프트가 담당한다.
  *
  * @param {string} text
  * @returns {string[]} 이모지 문자 배열
@@ -368,7 +368,7 @@ export function assessQuality(cleanText, language = 'ko') {
  
 /**
  * 방문객 소감을 기계적으로 전처리한다.
- * 출력은 claude-extractor.js의 직접 입력으로 사용된다.
+ * 출력은 ai-extractor.js의 직접 입력으로 사용된다.
  *
  * @param {string} rawText
  * @returns {SlimPreprocessed}
@@ -378,7 +378,7 @@ export function assessQuality(cleanText, language = 'ko') {
  * // pre.language  → 'ko'
  * // pre.emojis    → ['🌾', '✨']   ← 해석은 AI가
  * // pre.quality.isAcceptable → true
- * // → claude-extractor.js 에 전달
+ * // → ai-extractor.js 에 전달
  */
 export function preprocessInput(rawText) {
   const t0 = Date.now();
@@ -460,7 +460,7 @@ export function debugPrint(result) {
     console.info('UI 메시지:', result.quality.uiMessage);
   console.log('다양성 시드:', result.diversitySeed);
   console.log('처리 시간:', result.metadata.processingTimeMs + 'ms');
-  console.log('--- AI 분석 슬롯 (모두 null — claude-extractor가 채움) ---');
+  console.log('--- AI 분석 슬롯 (모두 null — ai-extractor가 채움) ---');
   console.log('contextAnalysis:', result.contextAnalysis);
   console.log('emotionScores:',   result.emotionScores);
   console.groupEnd();
