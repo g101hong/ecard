@@ -47,7 +47,7 @@ function ensureFont() {
 const CFG = Object.freeze({
   DEFAULT_WIDTH:      1200,
   COMPRESSION_LEVEL:  8,
-  CARD_RATIO:         0.30,  // 카드 높이 = 이미지 너비 × 이 비율
+  CARD_RATIO:         0.38,  // 카드 높이 = 이미지 너비 × 이 비율 (폰트 확대로 증가)
   PAD_X_RATIO:        0.07,
   BG_IMAGE:           '#14110F',
   BG_CARD:            '#1C1710',
@@ -80,9 +80,9 @@ function buildReplyCardBuffer(reply, W, H) {
   const ctx    = canvas.getContext('2d');
 
   const px     = Math.round(W * CFG.PAD_X_RATIO);
-  const fMain  = Math.round(W * 0.036);
-  const fPlace = Math.round(W * 0.020);
-  const fTag   = Math.round(W * 0.013);
+  const fMain  = Math.round(W * 0.0576);  // ×1.6 → ~69px @1200
+  const fPlace = Math.round(W * 0.0320);  // ×1.6 → ~38px @1200
+  const fTag   = Math.round(W * 0.0180);  // ×1.6 → ~22px @1200
 
   // ── 배경 ───────────────────────────────────────────────────
   ctx.fillStyle = CFG.BG_CARD;
