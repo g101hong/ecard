@@ -1,6 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — AI 종합 분석 모듈
- * @module emotion-engine/claude-extractor
+ * @module emotion-engine/ai-extractor
  * @version 4.0.0
  *
  * ─────────────────────────────────────────────────────────────────
