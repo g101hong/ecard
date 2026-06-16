@@ -277,7 +277,7 @@ export async function generateReplyFromImpression(
  * 소감 원문만 받아 전처리 + 감성 분석 + 답글 생성을 모두 실행한다.
  *
  * emotion-engine 없이 reply-engine을 단독으로 사용할 때의 진입점.
- * 내부적으로 emotion-engine의 preprocessor와 claude-extractor를 직접 호출한다.
+ * 내부적으로 emotion-engine의 preprocessor와 ai-extractor를 직접 호출한다.
  *
  * @param {string}  rawText           방문객 소감 원문
  * @param {Object}  [options]
