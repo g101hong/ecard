@@ -50,7 +50,6 @@ const elErrorMsg     = $('error-msg');
 const elLoading      = $('loading-overlay');
 
 // 화면 2 — 결과
-const elSpotLabel    = $('active-spot-label');
 const elPaletteStrip = $('palette-strip');
 const elKeywordChips = $('keyword-chips');
 const elPrimaryEmotion = $('primary-emotion');
@@ -267,12 +266,6 @@ async function onSubmit() {
       }
     }
 
-    // ── 패널 강조 ─────────────────────────────────────────────────
-    if (typeof data.spotIndex === 'number') {
-      highlightPanel(data.spotIndex);
-      showSpotLabel(data.spotIndex);
-    }
-
     // ── 팔레트 스트립 ─────────────────────────────────────────────
     renderPaletteStrip(colorResult.panelColors);
 
@@ -308,7 +301,6 @@ function onReset() {
   selectedCompanion = null;
 
   resetSVG();
-  elSpotLabel.classList.add('hidden');
   elPaletteStrip.classList.add('hidden');
 
   hideError();
@@ -472,7 +464,6 @@ function renderPaletteStrip(panelColors) {
 
     chip.addEventListener('click', () => {
       highlightPanel(panel.index);
-      showSpotLabel(panel.index);
     });
 
     elPaletteStrip.appendChild(chip);
@@ -538,22 +529,6 @@ function renderSpectrumBars(scores) {
 
     elSpectrumBars.appendChild(row);
   });
-}
-
-// =============================================================================
-// ⑯ 경승지 레이블 표시
-// =============================================================================
-
-/**
- * SVG 위에 현재 강조된 경승지 이름을 표시한다.
- * @param {number} spotIndex
- */
-function showSpotLabel(spotIndex) {
-  const spot = SPOTS[spotIndex];
-  if (!spot) return;
-
-  elSpotLabel.textContent = `${spot.emoji} ${spot.name}`;
-  elSpotLabel.classList.remove('hidden');
 }
 
 // =============================================================================
