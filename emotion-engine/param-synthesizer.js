@@ -508,7 +508,7 @@ export function colorTempToRGBTint(kelvinOffset) {
  *   6. 유리 재질 파라미터 파생
  *   7. WebGL 직접 사용 파생값 계산
  *
- * @param {import('./claude-extractor.js').ExtractionResult} extraction
+ * @param {import('./ai-extractor.js').ExtractionResult} extraction
  * @returns {GlobalColorParams}
  *
  * @example
