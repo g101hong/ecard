@@ -180,7 +180,13 @@ function bindEvents() {
 }
 
 /**
- * 칩 그룹(라디오 버튼 기반)에 선택 상태 토글 + 콜백을 연결한다.
+ * 칩 그룹(label+radio 기반)에 선택 상태 토글 + 콜백을 연결한다.
+ *
+ * <label class="chip"> 구조에서 click 이벤트를 사용하면
+ * label 클릭 → radio 체크 → label에 click 재발생으로 이벤트가
+ * 두 번 발생해 is-selected가 즉시 제거되는 문제가 있다.
+ * 이를 방지하기 위해 내부 <input>의 change 이벤트를 사용한다.
+ *
  * @param {HTMLElement} groupEl  .chip-grid 컨테이너
  * @param {(value:string) => void} onSelect
  */
@@ -193,12 +199,11 @@ function bindChipGroup(groupEl, onSelect) {
     const input = chip.querySelector('input[type="radio"]');
     if (!input) return;
 
-    chip.addEventListener('click', () => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
       // 같은 그룹 내 다른 칩의 선택 해제
       chips.forEach((c) => c.classList.remove('is-selected'));
       chip.classList.add('is-selected');
-      input.checked = true;
-
       onSelect(input.value);
     });
   });
