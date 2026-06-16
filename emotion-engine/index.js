@@ -32,7 +32,7 @@
 // =============================================================================
 
 import { preprocessInput }                       from './preprocessor.js';
-import { extractEmotions }                       from './claude-extractor.js';
+import { extractEmotions }                       from './ai-extractor.js';
 import { synthesizeColorParams,
          colorTempToRGBTint }                    from './param-synthesizer.js';
 import { individualizePanels    as individualizeAllPanels,
@@ -273,7 +273,7 @@ export async function analyzeImpression(rawText, options = {}) {
   try {
     extraction = await extractEmotions(pre, visitCtx);   // [v2.0] visitCtx 추가
     if (debugMode) {
-      const { debugPrintExtraction } = await import('./claude-extractor.js');
+      const { debugPrintExtraction } = await import('./ai-extractor.js');
       debugPrintExtraction(extraction);
     }
   } catch (err) {
@@ -560,7 +560,7 @@ export { SPOTS }                     from './constants/spot-palettes.js';
 export { SPOT_BASE_PALETTES as PANEL_CONFIGS } from './panel-individualizer.js';
 export { FALLBACK_TIER }             from './fallback-handler.js';
 export { preprocessInput }           from './preprocessor.js';
-export { extractEmotions }           from './claude-extractor.js';
+export { extractEmotions }           from './ai-extractor.js';
 export { synthesizeColorParams }     from './param-synthesizer.js';
 export { individualizePanels as individualizeAllPanels } from './panel-individualizer.js';
 export { guardDiversity }            from './diversity-guard.js';
