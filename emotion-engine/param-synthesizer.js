@@ -12,7 +12,7 @@
  *   스테인드글라스 WebGL 렌더링에 직접 사용되는
  *   6개 글로벌 색채 파라미터로 수학적 변환한다.
  *
- * 입력:  ExtractionResult  (claude-extractor.js 출력)
+ * 입력:  ExtractionResult  (ai-extractor.js 출력)
  * 출력:  GlobalColorParams (panel-individualizer.js 입력)
  *
  * ─────────────────────────────────────────────────────────────────
