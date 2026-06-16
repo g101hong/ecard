@@ -199,8 +199,13 @@ function bindChipGroup(groupEl, onSelect) {
     const input = chip.querySelector('input[type="radio"]');
     if (!input) return;
 
-    input.addEventListener('change', () => {
+    input.addEventListener('change', (e) => {
+      // 버블링 차단 — 다른 그룹의 이벤트 핸들러로 전파되지 않도록
+      e.stopPropagation();
+
+      // 이 input이 실제로 checked 상태일 때만 처리
       if (!input.checked) return;
+
       // 같은 그룹 내 다른 칩의 선택 해제
       chips.forEach((c) => c.classList.remove('is-selected'));
       chip.classList.add('is-selected');
