@@ -105,6 +105,10 @@ function showScreen(screen) {
   elScreenResult.classList.toggle('is-hidden', !showResult);
   elBackBtn.classList.toggle('hidden', !showResult);
 
+  // 화면2 진입 시 헤더를 floating compact 모드로 전환
+  const appFrame = document.querySelector('.app-frame');
+  if (appFrame) appFrame.classList.toggle('is-result', showResult);
+
   if (!showResult) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -452,13 +456,23 @@ function renderResult(data) {
 function renderPaletteStrip(panelColors) {
   if (!panelColors || panelColors.length === 0) return;
 
+  // 유효한 색상(null이 아닌)이 하나도 없으면 팔레트 스트립 숨김
+  // (SVG에 spot-XX-N ID가 없어 색상을 읽지 못한 경우)
+  const hasColors = panelColors.some((p) => p.color !== null);
+  if (!hasColors) {
+    elPaletteStrip.classList.add('hidden');
+    return;
+  }
+
   elPaletteStrip.innerHTML = '';
 
   panelColors.forEach((panel) => {
+    if (!panel.color) return; // 색상 없는 패널은 칩 생략
+
     const chip = document.createElement('div');
     chip.className   = 'palette-chip';
     chip.title       = panel.name ?? SPOTS[panel.index]?.name ?? `패널 ${panel.index}`;
-    chip.style.background = panel.color ?? '#888';
+    chip.style.background = panel.color;
 
     chip.addEventListener('click', () => {
       highlightPanel(panel.index);
