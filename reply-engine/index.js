@@ -16,7 +16,7 @@
  *       ▼ STAGE E-1  preprocessor.js (emotion-engine)
  *   SlimPreprocessed  ─ 정규화·언어감지·품질검사·다양성시드
  *       │
- *       ▼ STAGE E-2  claude-extractor.js (emotion-engine)
+ *       ▼ STAGE E-2  ai-extractor.js (emotion-engine)
  *   ExtractionResult  ─ 감성8차원·경승지매칭·contextAnalysis
  *       │
  *       ├──────────────────────────────────────────────────────────
