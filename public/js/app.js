@@ -36,7 +36,6 @@ const $ = (id) => document.getElementById(id);
 // 화면 전환
 const elScreenInput   = $('screen-input');
 const elScreenResult  = $('screen-result');
-const elBackBtn       = $('back-btn');
 
 // 화면 1 — 입력 폼
 const elForm         = $('impression-form');
@@ -103,9 +102,7 @@ function showScreen(screen) {
   const showResult = screen === 'result';
   elScreenInput.classList.toggle('is-hidden', showResult);
   elScreenResult.classList.toggle('is-hidden', !showResult);
-  elBackBtn.classList.toggle('hidden', !showResult);
 
-  // 화면2 진입 시 헤더를 floating compact 모드로 전환
   const appFrame = document.querySelector('.app-frame');
   if (appFrame) appFrame.classList.toggle('is-result', showResult);
 
@@ -179,7 +176,6 @@ function bindEvents() {
 
   // 버튼
   elResetBtn.addEventListener('click', onReset);
-  elBackBtn.addEventListener('click',  onReset);
   elSaveBtn.addEventListener('click',  onSave);
   elShareBtn.addEventListener('click', onShare);
 }
