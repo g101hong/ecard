@@ -12,7 +12,7 @@
  *
  *   [v2.0 변경] AI 엔진 : Anthropic Claude → Google Gemini 2.0 Flash
  *
- *   emotion-engine의 claude-extractor.js와 설계 패턴을 통일한다:
+ *   emotion-engine의 ai-extractor.js와 설계 패턴을 통일한다:
  *     - API 설정 상수 분리
  *     - 재시도 로직 내장 (MAX_RETRIES)
  *     - 응답 파싱 실패 시 reply-fallback으로 위임
@@ -66,7 +66,7 @@ import { selectTemplate } from './constants/reply-templates.js';
  
 /**
  * Gemini API 설정.
- * emotion-engine/claude-extractor.js의 API_CONFIG와 동일한 구조.
+ * emotion-engine/ai-extractor.js의 API_CONFIG와 동일한 구조.
  * 답글 생성은 토큰을 적게 사용하므로 MAX_TOKENS를 낮게 설정.
  */
 const API_CONFIG = Object.freeze({
