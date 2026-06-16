@@ -47,7 +47,7 @@ function ensureFont() {
 const CFG = Object.freeze({
   DEFAULT_WIDTH:      1200,
   COMPRESSION_LEVEL:  8,
-  CARD_RATIO:         0.38,  // 카드 높이 = 이미지 너비 × 이 비율 (폰트 확대로 증가)
+  CARD_RATIO:         0.46,  // 카드 높이 비율 (폰트 전체 확대 반영)
   PAD_X_RATIO:        0.07,
   BG_IMAGE:           '#14110F',
   BG_CARD:            '#1C1710',
@@ -80,9 +80,9 @@ function buildReplyCardBuffer(reply, W, H) {
   const ctx    = canvas.getContext('2d');
 
   const px     = Math.round(W * CFG.PAD_X_RATIO);
-  const fMain  = Math.round(W * 0.0576);  // ×1.6 → ~69px @1200
-  const fPlace = Math.round(W * 0.0320);  // ×1.6 → ~38px @1200
-  const fTag   = Math.round(W * 0.0180);  // ×1.6 → ~22px @1200
+  const fMain  = Math.round(W * 0.0576);  // ×1.6     → ~69px @1200
+  const fPlace = Math.round(W * 0.0512);  // ×1.6×1.6 → ~61px @1200
+  const fTag   = Math.round(W * 0.0288);  // ×1.6×1.6 → ~35px @1200
 
   // ── 배경 ───────────────────────────────────────────────────
   ctx.fillStyle = CFG.BG_CARD;
@@ -95,28 +95,30 @@ function buildReplyCardBuffer(reply, W, H) {
   ctx.globalAlpha = 1;
 
   // ── 황금 구분 단선 ─────────────────────────────────────────
-  const lineY = Math.round(H * 0.14);
+  const lineY = Math.round(H * 0.12);
   const lineW = Math.round(W * 0.05);
   ctx.fillStyle = CFG.COLOR_ACCENT;
   ctx.beginPath();
   ctx.roundRect(px, lineY, lineW, 2, 1);
   ctx.fill();
 
-  // ── main 문장 ─────────────────────────────────────────────
-  const mainY = Math.round(H * 0.43);
+  // ── main 문장 (원래 크기) ──────────────────────────────────
+  const mainY = Math.round(H * 0.32);
   ctx.fillStyle = CFG.COLOR_MAIN;
   ctx.font = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  ctx.letterSpacing = '0px';
   ctx.fillText(reply.main ?? '', px, mainY);
 
-  // ── place 문장 ────────────────────────────────────────────
-  const placeY = Math.round(H * 0.64);
+  // ── place 문장 (×1.6 확대) ────────────────────────────────
+  const placeY = Math.round(H * 0.60);
   ctx.fillStyle = CFG.COLOR_PLACE;
   ctx.font = `${fPlace}px '${CFG.FONT_HAND}'`;
+  ctx.letterSpacing = '0px';
   ctx.fillText(reply.place ?? '', px, placeY);
 
-  // ── tagline ───────────────────────────────────────────────
+  // ── tagline (×1.6 확대) ───────────────────────────────────
   // NanumWaIrDeu에 em dash(—)가 없으므로 하이픈으로 정규화
-  const tagY = Math.round(H * 0.85);
+  const tagY = Math.round(H * 0.84);
   const taglineText = (reply.tagline ?? '').replace(/—/g, '-');
   ctx.fillStyle = CFG.COLOR_TAGLINE;
   ctx.font = `${fTag}px '${CFG.FONT_HAND}'`;
