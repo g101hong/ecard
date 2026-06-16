@@ -536,25 +536,6 @@ body {
     radial-gradient(ellipse 90% 70% at 50% 40%, transparent 55%, rgba(20, 17, 15, 0.55) 100%);
 }
 
-/* 경승지 라벨 */
-.spot-label {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-hi);
-  background: rgba(20, 17, 15, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  backdrop-filter: blur(6px);
-}
-
 /* 팔레트 스트립 — 이미지 하단, 경승지 라벨과 같은 레이어 */
 .palette-strip {
   position: absolute;
