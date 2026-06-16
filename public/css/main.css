@@ -231,6 +231,34 @@ body {
   display: none;
 }
 
+/*
+ * 화면2 진입 시 헤더를 SVG 이미지 위에 floating 레이어로 전환.
+ * app.js에서 .app-frame에 is-result 클래스를 토글하면 적용됨.
+ */
+.app-frame.is-result .app-header {
+  padding: 12px 20px;
+  border-bottom: none;
+  background: transparent;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+.app-frame.is-result .app-header > div:first-child {
+  display: none;
+}
+
+.app-frame.is-result .app-header__back {
+  background: rgba(20, 17, 15, 0.55);
+  backdrop-filter: blur(6px);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-hi);
+  margin-top: 0;
+  margin-left: auto;
+}
+
 /* ============================================================= */
 /* 6. 화면 1 — 입력 폼                                             */
 /* ============================================================= */
@@ -484,7 +512,9 @@ body {
 .glass-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  /* aspect-ratio 제거 — 화면 내 남은 높이를 flex로 자동 배분 */
+  flex: 1;
+  min-height: 0;
   background: var(--ink);
   overflow: hidden;
   border-bottom: 1px solid var(--line);
@@ -533,16 +563,16 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* 팔레트 스트립 */
+/* 팔레트 스트립 — 이미지 하단, 경승지 라벨과 같은 레이어 */
 .palette-strip {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 16px;
+  right: 14px;
+  bottom: 14px;
   z-index: 3;
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-wrap: nowrap;
+  max-width: 60%;
 }
 
 .palette-chip {
