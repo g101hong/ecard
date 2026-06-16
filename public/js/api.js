@@ -1,56 +1,48 @@
 /**
  * @fileoverview 울산 E-Card — 서버 API fetch 래퍼
  * @module public/js/api
- * @version 1.0.0
+ * @version 2.0.0  [방안C] SSE 스트리밍 수신
  *
  * ─────────────────────────────────────────────────────────────────
- * 역할
+ * [방안C 변경사항]
  * ─────────────────────────────────────────────────────────────────
  *
- *   서버의 두 API 엔드포인트에 대한 fetch 래퍼를 제공한다.
+ *   analyzeImpression(text, options)의 인터페이스는 그대로 유지한다.
+ *   내부적으로 fetch + ReadableStream으로 SSE를 수신하며,
+ *   options.onColors / options.onReply 콜백으로 단계별 데이터를
+ *   app.js에 전달한다.
  *
- *   analyzeImpression(text)
- *     POST /api/impression
- *     소감 텍스트 → 감성 분석 + 답글 + 12패널 색상 반환
- *
- *   requestCard(emotionScores, diversitySeed, reply?)
- *     POST /api/card
- *     감성 점수 → PNG 생성 → 다운로드 URL 반환
- *
- * ─────────────────────────────────────────────────────────────────
- * [응답 구조]
- *
- *   analyzeImpression 응답:
- *   {
- *     spotIndex       : number          매칭 경승지 인덱스 (0~11)
- *     emotionScores   : Object          8차원 감성 점수
- *     primaryEmotion  : string          핵심 감성 한글
- *     keywords        : string[]        감성 키워드 5개
- *     panelColors     : Object[]        12패널 색상 (main/sub/acc/cssHSL)
- *     reply           : {               E-Card 3단 답글
- *       main    : string
- *       place   : string
- *       tagline : string
- *     }
- *     colorTempFilter : string          CSS filter 문자열 (선택)
- *     diversitySeed   : number          다양성 시드
- *   }
- *
- *   requestCard 응답:
- *   {
- *     downloadUrl : string   '/output/{uuid}.png'
- *   }
+ *   app.js 변경 최소화:
+ *     기존: const data = await analyzeImpression(text, options)
+ *     변경: const data = await analyzeImpression(text, {
+ *              ...options,
+ *              onColors: (colorsData) => { /* SVG 즉시 적용 *\/ },
+ *              onReply:  (replyData)  => { /* 답글 렌더 *\/ },
+ *           })
+ *     resolve 값은 colors + reply를 합친 완전한 객체 (기존과 동일)
  *
  * ─────────────────────────────────────────────────────────────────
- * [오류 처리]
+ * SSE 수신 방식 — fetch + ReadableStream
+ * ─────────────────────────────────────────────────────────────────
  *
- *   HTTP 4xx/5xx → ApiError (message, status, retryable) throw
- *   네트워크 단절  → ApiError (NETWORK_OFFLINE)
- *   타임아웃      → ApiError (NETWORK_TIMEOUT)
- *   JSON 파싱 실패 → ApiError (JSON_PARSE_ERROR)
+ *   EventSource는 GET만 지원하므로 POST body를 보낼 수 없다.
+ *   fetch의 response.body(ReadableStream)를 직접 읽어 SSE를 파싱한다.
  *
- *   호출자(app.js)는 catch 블록에서 err.status 와 err.retryable 을
- *   확인하여 적절한 UI 메시지를 표시한다.
+ *   수신 이벤트:
+ *     event: colors  → onColors(data) 콜백 즉시 호출
+ *     event: reply   → onReply(data)  콜백 즉시 호출
+ *     event: done    → Promise resolve
+ *     event: error   → Promise reject
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 오류 처리
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   SSE 연결 전 HTTP 오류 (400 등)     → ApiError throw (즉시)
+ *   SSE 스트림 중 error 이벤트         → ApiError throw
+ *   SSE 스트림 중 네트워크 단절        → ApiError throw
+ *   타임아웃 (IMPRESSION_TIMEOUT_MS)   → ApiError throw
+ *   onColors / onReply 콜백 내부 예외  → 콘솔 경고 후 무시 (UI 깨짐 방지)
  */
 
 'use strict';
@@ -60,13 +52,15 @@
 // =============================================================================
 
 const API_CONFIG = Object.freeze({
-  /** /api/impression 타임아웃 (ms) — Gemini API 2회 호출 고려 */
-  IMPRESSION_TIMEOUT_MS: 30_000,
+  /**
+   * /api/impression SSE 타임아웃 (ms)
+   * Gemini 1회 호출 기준 최대 20초 + 여유
+   */
+  IMPRESSION_TIMEOUT_MS: 35_000,
 
-  /** /api/card 타임아웃 (ms) — SVG→PNG 변환 고려 */
+  /** /api/card 타임아웃 (ms) */
   CARD_TIMEOUT_MS: 20_000,
 
-  /** Content-Type 헤더 */
   CONTENT_TYPE: 'application/json',
 });
 
@@ -74,16 +68,7 @@ const API_CONFIG = Object.freeze({
 // ② 커스텀 오류 클래스
 // =============================================================================
 
-/**
- * API 호출에서 발생하는 오류를 표현한다.
- * app.js의 catch 블록에서 err.status, err.retryable 을 참조한다.
- */
 export class ApiError extends Error {
-  /**
-   * @param {string}  message    사용자에게 표시할 메시지
-   * @param {number}  [status]   HTTP 상태 코드 (네트워크 오류면 0)
-   * @param {boolean} [retryable] 재시도 가능 여부
-   */
   constructor(message, status = 0, retryable = false) {
     super(message);
     this.name      = 'ApiError';
@@ -93,267 +78,301 @@ export class ApiError extends Error {
 }
 
 // =============================================================================
-// ③ 내부 fetch 유틸리티
+// ③ SSE 파서 — ReadableStream → 이벤트 객체
 // =============================================================================
 
 /**
- * AbortController 기반 타임아웃 fetch.
- * 오류를 ApiError로 변환하여 throw한다.
+ * fetch response.body(ReadableStream)를 읽어 SSE 이벤트를 파싱한다.
  *
- * @param {string} url
- * @param {Object} body          JSON으로 직렬화될 요청 본문
- * @param {number} timeoutMs     타임아웃 시간 (ms)
- * @returns {Promise<Object>}    파싱된 JSON 응답
- * @throws  {ApiError}
+ * SSE 규격: "event: name\ndata: json\n\n" 형식의 텍스트 스트림.
+ * TextDecoder + 줄 단위 파싱으로 구현한다.
+ *
+ * @param {ReadableStream} body          fetch response.body
+ * @param {AbortController} controller   타임아웃 제어
+ * @param {function} onEvent             ({ event, data }) 콜백
+ * @returns {Promise<void>}
  */
-async function _post(url, body, timeoutMs) {
-  const controller = new AbortController();
-  const timerId    = setTimeout(() => controller.abort(), timeoutMs);
+async function _readSSEStream(body, controller, onEvent) {
+  const reader  = body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer    = '';
 
-  let res;
   try {
-    res = await fetch(url, {
-      method:  'POST',
-      signal:  controller.signal,
-      headers: { 'Content-Type': API_CONFIG.CONTENT_TYPE },
-      body:    JSON.stringify(body),
-    });
-  } catch (err) {
-    clearTimeout(timerId);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    // AbortError → 타임아웃
-    if (err.name === 'AbortError') {
-      throw new ApiError(
-        '서버 응답이 너무 늦어지고 있습니다. 잠시 후 다시 시도해주세요.',
-        0,
-        true,
-      );
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE는 "\n\n"으로 이벤트 경계를 구분한다
+      const blocks = buffer.split('\n\n');
+      // 마지막 불완전한 블록은 버퍼에 남긴다
+      buffer = blocks.pop() ?? '';
+
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+
+        let eventName = 'message';
+        let dataStr   = '';
+
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            dataStr = line.slice(5).trim();
+          }
+        }
+
+        if (!dataStr) continue;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          onEvent({ event: eventName, data: parsed });
+        } catch {
+          console.warn('[api] SSE 데이터 파싱 실패:', dataStr.slice(0, 100));
+        }
+      }
     }
-
-    // TypeError (fetch 자체 실패) → 네트워크 오프라인
-    throw new ApiError(
-      '네트워크 연결을 확인해주세요.',
-      0,
-      true,
-    );
-  }
-
-  clearTimeout(timerId);
-
-  // ── HTTP 오류 처리 ────────────────────────────────────────────
-  if (!res.ok) {
-    let serverMessage = '';
-    try {
-      const errJson = await res.json();
-      serverMessage = errJson.error ?? errJson.message ?? '';
-    } catch {
-      // JSON 파싱 실패 시 무시
-    }
-
-    const retryable = res.status === 429 || res.status >= 500;
-
-    const fallbackMessages = {
-      400: '요청 형식이 올바르지 않습니다.',
-      429: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
-      500: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
-      503: '서버가 일시적으로 사용 불가합니다. 잠시 후 다시 시도해주세요.',
-    };
-
-    throw new ApiError(
-      serverMessage || fallbackMessages[res.status] || `오류가 발생했습니다. (${res.status})`,
-      res.status,
-      retryable,
-    );
-  }
-
-  // ── JSON 파싱 ────────────────────────────────────────────────
-  try {
-    return await res.json();
-  } catch {
-    throw new ApiError(
-      '서버 응답을 처리하지 못했습니다. 새로고침 후 다시 시도해주세요.',
-      res.status,
-      false,
-    );
+  } finally {
+    reader.releaseLock();
+    controller.abort(); // 타임아웃 타이머 해제
   }
 }
 
 // =============================================================================
-// ④ 응답 유효성 검사
-// =============================================================================
-
-/**
- * /api/impression 응답의 필수 필드를 확인하고 기본값을 보정한다.
- * 서버 폴백 응답처럼 일부 필드가 없어도 UI가 깨지지 않도록 한다.
- *
- * @param {Object} data  서버 응답 JSON
- * @returns {Object}     보정된 응답 객체
- */
-function _sanitizeImpressionResponse(data) {
-  // 필수 최상위 필드 기본값 보정
-  const EMOTION_KEYS = [
-    'amazement', 'peace', 'vitality', 'nostalgia',
-    'freshness', 'grandeur', 'warmth', 'mystery',
-  ];
-
-  const emotionScores = {};
-  EMOTION_KEYS.forEach((k) => {
-    const v = data.emotionScores?.[k];
-    emotionScores[k] = typeof v === 'number' ? Math.min(100, Math.max(0, v)) : 25;
-  });
-
-  // panelColors: 12개 배열 보장
-  const panelColors = Array.isArray(data.panelColors) && data.panelColors.length === 12
-    ? data.panelColors
-    : null;  // null이면 app.js가 클라이언트 사이드 계산으로 폴백
-
-  // reply 3단 구조 기본값
-  const reply = {
-    main:    data.reply?.main    || '울산이 당신에게 건넨 소중한 순간',
-    place:   data.reply?.place   || '울산의 아름다운 풍경이 오래도록 기억에 남기를 바랍니다.',
-    tagline: data.reply?.tagline || 'ULSAN — 당신의 울산',
-  };
-
-  // tagline ULSAN 형식 보장
-  if (!reply.tagline.startsWith('ULSAN')) {
-    reply.tagline = `ULSAN — ${reply.tagline}`;
-  }
-
-  return {
-    spotIndex:       typeof data.spotIndex === 'number'
-                       ? Math.min(11, Math.max(0, Math.round(data.spotIndex)))
-                       : 0,
-    emotionScores,
-    primaryEmotion:  data.primaryEmotion  || '울산의 감동',
-    keywords:        Array.isArray(data.keywords) && data.keywords.length > 0
-                       ? data.keywords.slice(0, 5)
-                       : ['자연', '아름다움', '감동', '힐링', '울산'],
-    panelColors,
-    reply,
-    colorTempFilter: data.colorTempFilter || null,
-    diversitySeed:   typeof data.diversitySeed === 'number' ? data.diversitySeed : 0,
-  };
-}
-
-/**
- * /api/card 응답의 downloadUrl 필드를 확인한다.
- *
- * @param {Object} data
- * @returns {Object}
- * @throws {ApiError}
- */
-function _sanitizeCardResponse(data) {
-  if (typeof data.downloadUrl !== 'string' || !data.downloadUrl.startsWith('/')) {
-    throw new ApiError(
-      '이미지 저장에 실패했습니다. 다시 시도해주세요.',
-      500,
-      true,
-    );
-  }
-  return { downloadUrl: data.downloadUrl };
-}
-
-// =============================================================================
-// ⑤ 공개 API 함수
+// ④ /api/impression — SSE 수신
 // =============================================================================
 
 /**
  * 방문객 소감을 분석하여 E-Card 데이터를 반환한다.
  *
- * POST /api/impression
- *   Body  : { text: string, language?: string, tripDuration?: string, companion?: string }
- *   응답  : { spotIndex, emotionScores, primaryEmotion, keywords,
- *             panelColors, reply, colorTempFilter, diversitySeed }
+ * [방안C] SSE 스트리밍 수신.
+ *   colors 이벤트 수신 즉시 options.onColors(colorsData) 호출.
+ *   reply  이벤트 수신 즉시 options.onReply(replyData)  호출.
+ *   done   이벤트 수신 시  Promise resolve (합친 객체 반환).
  *
- * @param {string} text      방문객 소감 원문 (8자 이상)
+ * @param {string} text       방문객 소감 원문 (8자 이상)
  * @param {Object} [options]
- * @param {string} [options.language='ko']      언어 코드 ('ko'|'en'|'ja'|'zh')
- * @param {string} [options.tripDuration]       여행일정
- *   'day'|'1n2d'|'2n3d'|'3n4d'|'4n+' (당일/1박2일/2박3일/3박4일/4박이상)
- * @param {string} [options.companion]          여행동행
- *   'solo'|'family'|'friends'|'couple'|'other' (혼자/가족/친구/연인/기타)
- * @returns {Promise<Object>}  보정된 impression 응답 데이터
+ * @param {string}   [options.language='ko']
+ * @param {string}   [options.tripDuration]
+ * @param {string}   [options.companion]
+ * @param {function} [options.onColors]   Phase1 콜백 — SVG 색채 즉시 적용용
+ *   @param {Object} colorsData
+ *   @param {number} colorsData.spotIndex
+ *   @param {string} colorsData.spotName
+ *   @param {Object} colorsData.emotionScores
+ *   @param {string} colorsData.colorTempFilter
+ *   @param {number} colorsData.diversitySeed
+ * @param {function} [options.onReply]    Phase2 콜백 — 답글 카드 렌더용
+ *   @param {Object} replyData
+ *   @param {Object} replyData.reply  { main, place, tagline }
+ *   @param {string} replyData.primaryEmotion
+ *   @param {string[]} replyData.keywords
+ * @returns {Promise<Object>}  colors + reply 합친 완전한 응답 객체
  * @throws  {ApiError}
  *
  * @example
- * try {
- *   const data = await analyzeImpression(
- *     '간절곶에서 일출을 봤어요. 정말 감동이었어요 🌅',
- *     { tripDuration: '2n3d', companion: 'couple' },
- *   );
- *   // data.reply.main    → "그 빛은 오래도록 당신 곁에 머물 것입니다"
- *   // data.panelColors   → Array(12)
- *   // data.spotIndex     → 0
- * } catch (err) {
- *   if (err instanceof ApiError) {
- *     console.error(err.message, 'retryable:', err.retryable);
- *   }
- * }
+ * const data = await analyzeImpression(text, {
+ *   tripDuration: '2n3d',
+ *   companion: 'couple',
+ *   onColors: (d) => {
+ *     applyDeltaColorsToSVG(d.emotionScores, d.diversitySeed);
+ *     revealSVG();
+ *   },
+ *   onReply: (d) => {
+ *     renderResult(d);
+ *   },
+ * });
+ * // data.emotionScores, data.reply, data.spotIndex 등 사용 가능
  */
 export async function analyzeImpression(text, options = {}) {
   if (typeof text !== 'string' || text.trim().length < 8) {
     throw new ApiError('소감을 8자 이상 입력해주세요.', 400, false);
   }
 
-  const { language = 'ko', tripDuration = null, companion = null } = options;
+  const {
+    language     = 'ko',
+    tripDuration = null,
+    companion    = null,
+    onColors     = null,   // [방안C] Phase1 콜백
+    onReply      = null,   // [방안C] Phase2 콜백
+  } = options;
 
-  const rawData = await _post(
-    '/api/impression',
-    { text: text.trim(), language, tripDuration, companion },
+  const controller = new AbortController();
+  const timerId    = setTimeout(
+    () => controller.abort(),
     API_CONFIG.IMPRESSION_TIMEOUT_MS,
   );
 
-  return _sanitizeImpressionResponse(rawData);
+  // ── fetch — SSE 스트림 연결 ──────────────────────────────────────
+  let res;
+  try {
+    res = await fetch('/api/impression', {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: { 'Content-Type': API_CONFIG.CONTENT_TYPE },
+      body:    JSON.stringify({ text: text.trim(), language, tripDuration, companion }),
+    });
+  } catch (err) {
+    clearTimeout(timerId);
+    if (err.name === 'AbortError') {
+      throw new ApiError('서버 응답이 너무 늦어지고 있습니다. 잠시 후 다시 시도해주세요.', 0, true);
+    }
+    throw new ApiError('네트워크 연결을 확인해주세요.', 0, true);
+  }
+
+  // SSE 연결 전 HTTP 오류 처리 (400 Bad Request 등)
+  if (!res.ok) {
+    clearTimeout(timerId);
+    let serverMessage = '';
+    try { serverMessage = (await res.json()).error ?? ''; } catch { /* noop */ }
+    const retryable = res.status === 429 || res.status >= 500;
+    throw new ApiError(
+      serverMessage || `오류가 발생했습니다. (${res.status})`,
+      res.status,
+      retryable,
+    );
+  }
+
+  // ── SSE 스트림 수신 및 이벤트 처리 ─────────────────────────────
+  const accumulated = {};   // colors + reply 데이터를 누적
+
+  return new Promise((resolve, reject) => {
+    _readSSEStream(res.body, controller, ({ event, data }) => {
+
+      if (event === 'colors') {
+        // Phase 1: 색상 데이터 수신
+        // → onColors 콜백 즉시 호출 (SVG 색채 전환 트리거)
+        Object.assign(accumulated, {
+          spotIndex:       data.spotIndex,
+          spotName:        data.spotName,
+          emotionScores:   _sanitizeEmotionScores(data.emotionScores),
+          colorTempFilter: data.colorTempFilter ?? null,
+          diversitySeed:   data.diversitySeed   ?? 0,
+        });
+
+        if (typeof onColors === 'function') {
+          try { onColors(accumulated); } catch (e) {
+            console.warn('[api] onColors 콜백 오류 (무시):', e.message);
+          }
+        }
+      }
+
+      else if (event === 'reply') {
+        // Phase 2: 답글 데이터 수신
+        // → onReply 콜백 즉시 호출 (답글 카드 렌더 트리거)
+        const replyPayload = {
+          reply:          _sanitizeReply(data.reply),
+          primaryEmotion: data.primaryEmotion || '울산의 감동',
+          keywords:       Array.isArray(data.keywords) ? data.keywords.slice(0, 5)
+                                                       : ['자연','아름다움','감동','힐링','울산'],
+        };
+        Object.assign(accumulated, replyPayload);
+
+        if (typeof onReply === 'function') {
+          try { onReply(replyPayload); } catch (e) {
+            console.warn('[api] onReply 콜백 오류 (무시):', e.message);
+          }
+        }
+      }
+
+      else if (event === 'done') {
+        // 스트림 종료 — 합친 객체로 resolve
+        clearTimeout(timerId);
+        resolve(accumulated);
+      }
+
+      else if (event === 'error') {
+        // 서버 측 오류 이벤트
+        clearTimeout(timerId);
+        reject(new ApiError(
+          data.message || '감성 분석 중 오류가 발생했습니다.',
+          500,
+          true,
+        ));
+      }
+
+    }).catch((err) => {
+      clearTimeout(timerId);
+      if (err.name === 'AbortError') {
+        reject(new ApiError('서버 응답 시간이 초과되었습니다.', 0, true));
+      } else {
+        reject(new ApiError('스트림 수신 중 오류가 발생했습니다.', 0, true));
+      }
+    });
+  });
 }
 
-/**
- * 감성 점수 기반으로 PNG E-Card를 생성하고 다운로드 URL을 반환한다.
- *
- * POST /api/card
- *   Body  : { emotionScores, diversitySeed, reply?, size? }
- *   응답  : { downloadUrl: '/output/{uuid}.png' }
- *
- * @param {Object} emotionScores   8차원 감성 점수 객체
- * @param {number} diversitySeed   다양성 시드 (analyzeImpression 응답에서 전달)
- * @param {{ main:string, place:string, tagline:string }|null} [reply]
- *   타이포그래피 합성용 답글. null이면 이미지만 저장.
- * @param {number} [size=1200]     출력 이미지 너비 (400~2400)
- * @returns {Promise<{ downloadUrl: string }>}
- * @throws  {ApiError}
- *
- * @example
- * const { downloadUrl } = await requestCard(
- *   data.emotionScores,
- *   data.diversitySeed,
- *   data.reply,
- * );
- * // downloadUrl → '/output/f47ac10b-58cc-4e62-a3f3-ab18cc1f6c7e.png'
- */
+// =============================================================================
+// ⑤ /api/card — 기존 JSON POST 유지
+// =============================================================================
+
 export async function requestCard(emotionScores, diversitySeed, reply = null, size = 1200) {
   if (!emotionScores || typeof emotionScores !== 'object') {
     throw new ApiError('감성 데이터가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
   }
 
-  const rawData = await _post(
-    '/api/card',
-    {
-      emotionScores,
-      diversitySeed: diversitySeed ?? 0,
-      reply:         reply ?? null,
-      size:          Math.min(Math.max(size, 400), 2400),
-    },
-    API_CONFIG.CARD_TIMEOUT_MS,
-  );
+  const controller = new AbortController();
+  const timerId    = setTimeout(() => controller.abort(), API_CONFIG.CARD_TIMEOUT_MS);
 
-  return _sanitizeCardResponse(rawData);
+  let res;
+  try {
+    res = await fetch('/api/card', {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: { 'Content-Type': API_CONFIG.CONTENT_TYPE },
+      body:    JSON.stringify({
+        emotionScores,
+        diversitySeed: diversitySeed ?? 0,
+        reply:         reply ?? null,
+        size:          Math.min(Math.max(size, 400), 2400),
+      }),
+    });
+  } catch (err) {
+    clearTimeout(timerId);
+    if (err.name === 'AbortError') throw new ApiError('이미지 저장 시간이 초과되었습니다.', 0, true);
+    throw new ApiError('네트워크 연결을 확인해주세요.', 0, true);
+  }
+
+  clearTimeout(timerId);
+
+  if (!res.ok) {
+    let msg = '';
+    try { msg = (await res.json()).error ?? ''; } catch { /* noop */ }
+    throw new ApiError(msg || `이미지 저장 실패 (${res.status})`, res.status, res.status >= 500);
+  }
+
+  const data = await res.json();
+  if (typeof data.downloadUrl !== 'string' || !data.downloadUrl.startsWith('/')) {
+    throw new ApiError('이미지 저장에 실패했습니다. 다시 시도해주세요.', 500, true);
+  }
+  return { downloadUrl: data.downloadUrl };
+}
+
+// =============================================================================
+// ⑥ 내부 sanitize 헬퍼
+// =============================================================================
+
+function _sanitizeEmotionScores(scores) {
+  const KEYS = ['amazement','peace','vitality','nostalgia','freshness','grandeur','warmth','mystery'];
+  const out  = {};
+  KEYS.forEach((k) => {
+    const v = scores?.[k];
+    out[k] = typeof v === 'number' ? Math.min(100, Math.max(0, v)) : 25;
+  });
+  return out;
+}
+
+function _sanitizeReply(r) {
+  const main    = (typeof r?.main    === 'string' && r.main.trim())    ? r.main.trim()    : '울산이 당신에게 건넨 소중한 순간';
+  const place   = (typeof r?.place   === 'string' && r.place.trim())   ? r.place.trim()   : '울산의 아름다운 풍경이 오래도록 기억에 남기를 바랍니다.';
+  const rawTag  = typeof r?.tagline === 'string' ? r.tagline.trim() : '';
+  const tagline = rawTag ? (rawTag.startsWith('ULSAN') ? rawTag : `ULSAN — ${rawTag}`) : 'ULSAN — 당신의 울산';
+  return { main, place, tagline };
 }
 
 // =============================================================================
 // Default Export
 // =============================================================================
 
-export default {
-  analyzeImpression,
-  requestCard,
-  ApiError,
-};
+export default { analyzeImpression, requestCard, ApiError };
