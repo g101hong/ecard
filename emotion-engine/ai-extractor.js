@@ -510,7 +510,11 @@ export async function extractEmotions(pre, visitCtx = null) {
 
   try {
     rawResponse = await callGeminiAPI(SYSTEM_PROMPT, userPrompt);
+    // ★ 임시 진단 로그 추가
+    console.log('[진단] Gemini 원시 응답 마지막 200자:', rawResponse.slice(-200));
     parsed      = parseAIResponse(rawResponse);
+    // ★ 임시 진단 로그 추가
+    console.log('[진단] parsed.reply:', JSON.stringify(parsed.reply));
 
     const validation = validateAndSanitize(parsed);
     sanitized = validation.sanitized;
