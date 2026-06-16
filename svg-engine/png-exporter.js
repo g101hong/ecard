@@ -72,60 +72,156 @@ function parseSvgRatio(svgString) {
   return (p.length >= 4 && p[2] > 0 && p[3] > 0) ? p[3] / p[2] : 1.0;
 }
 
+// ── 텍스트 줄바꿈 유틸 ────────────────────────────────────────
+/**
+ * maxWidth를 넘는 텍스트를 단어/음절 단위로 줄바꿈하여 줄 배열을 반환한다.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} text
+ * @param {number} maxWidth
+ * @returns {string[]}
+ */
+function breakLines(ctx, text, maxWidth) {
+  const words = text.split('');   // 한글은 글자 단위로 분리
+  const lines = [];
+  let cur = '';
+
+  // 공백 기준으로 먼저 단어 분리, 단어 내에서 글자 단위 줄바꿈
+  const tokens = text.split(' ');
+  cur = '';
+
+  for (const token of tokens) {
+    const candidate = cur ? `${cur} ${token}` : token;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      cur = candidate;
+    } else {
+      // 현재까지 쌓인 줄 저장 후, 긴 토큰은 글자 단위로 쪼갬
+      if (cur) lines.push(cur);
+      cur = '';
+
+      // 토큰 자체가 maxWidth보다 길면 글자 단위로 분리
+      let charBuf = '';
+      for (const ch of token) {
+        const next = charBuf + ch;
+        if (ctx.measureText(next).width <= maxWidth) {
+          charBuf = next;
+        } else {
+          if (charBuf) lines.push(charBuf);
+          charBuf = ch;
+        }
+      }
+      cur = charBuf;
+    }
+  }
+  if (cur) lines.push(cur);
+
+  return lines;
+}
+
+/**
+ * 줄바꿈을 적용해 텍스트를 그리고, 실제 사용된 높이를 반환한다.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} text
+ * @param {number} x       시작 X
+ * @param {number} y       첫 줄 baseline Y
+ * @param {number} maxWidth
+ * @param {number} lineHeight
+ * @returns {number}  마지막 줄 baseline Y
+ */
+function fillWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+  const lines = breakLines(ctx, text, maxWidth);
+  let currentY = y;
+  for (const line of lines) {
+    ctx.fillText(line, x, currentY);
+    currentY += lineHeight;
+  }
+  return currentY;
+}
+
 // ── 답글 카드 PNG 버퍼 생성 (@napi-rs/canvas) ─────────────────
-function buildReplyCardBuffer(reply, W, H) {
+function buildReplyCardBuffer(reply, W) {
   ensureFont();
 
+  const px      = Math.round(W * CFG.PAD_X_RATIO);
+  const maxTextW = W - px * 2;   // 텍스트 최대 너비 (양쪽 패딩 제외)
+
+  const fMain   = Math.round(W * 0.0576);
+  const fPlace  = Math.round(W * 0.0512);
+  const fTag    = Math.round(W * 0.0288);
+
+  const lhMain  = Math.round(fMain  * 1.45);
+  const lhPlace = Math.round(fPlace * 1.45);
+  const lhTag   = Math.round(fTag   * 1.45);
+
+  // ── 텍스트 높이 사전 측정 (더미 캔버스) ─────────────────────
+  const dummy = createCanvas(W, 10);
+  const dctx  = dummy.getContext('2d');
+
+  dctx.font = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  const mainLines  = breakLines(dctx, reply.main  ?? '', maxTextW);
+
+  dctx.font = `${fPlace}px '${CFG.FONT_HAND}'`;
+  const placeLines = breakLines(dctx, reply.place ?? '', maxTextW);
+
+  dctx.font = `${fTag}px '${CFG.FONT_HAND}'`;
+  const tagText    = (reply.tagline ?? '').replace(/—/g, '-');
+  const tagLines   = breakLines(dctx, tagText, maxTextW);
+
+  // ── 카드 높이 동적 계산 ──────────────────────────────────────
+  const padTop    = Math.round(W * 0.08);   // 상단 여백
+  const padBot    = Math.round(W * 0.06);   // 하단 여백
+  const gapBlock  = Math.round(W * 0.04);   // 블록 간 간격
+
+  const lineY     = padTop;
+  const mainY     = lineY + Math.round(W * 0.06);
+  const mainBlock = mainLines.length  * lhMain;
+
+  const placeY    = mainY + mainBlock + gapBlock;
+  const placeBlock = placeLines.length * lhPlace;
+
+  const tagY      = placeY + placeBlock + gapBlock;
+  const tagBlock  = tagLines.length * lhTag;
+
+  const H = tagY + tagBlock + padBot;
+
+  // ── 실제 캔버스 렌더링 ────────────────────────────────────────
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  const px     = Math.round(W * CFG.PAD_X_RATIO);
-  const fMain  = Math.round(W * 0.0576);  // ×1.6     → ~69px @1200
-  const fPlace = Math.round(W * 0.0512);  // ×1.6×1.6 → ~61px @1200
-  const fTag   = Math.round(W * 0.0288);  // ×1.6×1.6 → ~35px @1200
-
-  // ── 배경 ───────────────────────────────────────────────────
+  // 배경
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
 
-  // ── 상단 경계선 ────────────────────────────────────────────
+  // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
   ctx.globalAlpha = 0.6;
   ctx.fillRect(0, 0, W, 1);
   ctx.globalAlpha = 1;
 
-  // ── 황금 구분 단선 ─────────────────────────────────────────
-  const lineY = Math.round(H * 0.12);
-  const lineW = Math.round(W * 0.05);
+  // 황금 구분 단선
   ctx.fillStyle = CFG.COLOR_ACCENT;
   ctx.beginPath();
-  ctx.roundRect(px, lineY, lineW, 2, 1);
+  ctx.roundRect(px, lineY, Math.round(W * 0.05), 2, 1);
   ctx.fill();
 
-  // ── main 문장 (원래 크기) ──────────────────────────────────
-  const mainY = Math.round(H * 0.32);
+  // main
   ctx.fillStyle = CFG.COLOR_MAIN;
-  ctx.font = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `bold ${fMain}px '${CFG.FONT_HAND}'`;
   ctx.letterSpacing = '0px';
-  ctx.fillText(reply.main ?? '', px, mainY);
+  fillWrappedText(ctx, reply.main ?? '', px, mainY, maxTextW, lhMain);
 
-  // ── place 문장 (×1.6 확대) ────────────────────────────────
-  const placeY = Math.round(H * 0.60);
+  // place
   ctx.fillStyle = CFG.COLOR_PLACE;
-  ctx.font = `${fPlace}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `${fPlace}px '${CFG.FONT_HAND}'`;
   ctx.letterSpacing = '0px';
-  ctx.fillText(reply.place ?? '', px, placeY);
+  fillWrappedText(ctx, reply.place ?? '', px, placeY, maxTextW, lhPlace);
 
-  // ── tagline (×1.6 확대) ───────────────────────────────────
-  // NanumWaIrDeu에 em dash(—)가 없으므로 하이픈으로 정규화
-  const tagY = Math.round(H * 0.84);
-  const taglineText = (reply.tagline ?? '').replace(/—/g, '-');
+  // tagline
   ctx.fillStyle = CFG.COLOR_TAGLINE;
-  ctx.font = `${fTag}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `${fTag}px '${CFG.FONT_HAND}'`;
   ctx.letterSpacing = '2px';
-  ctx.fillText(taglineText, px, tagY);
+  fillWrappedText(ctx, tagText, px, tagY, maxTextW, lhTag);
 
-  return canvas.toBuffer('image/png');
+  return { buf: canvas.toBuffer('image/png'), cardH: H };
 }
 
 // ── 메인 변환 함수 ─────────────────────────────────────────────
@@ -160,8 +256,8 @@ export async function svgToPng(
   const imgH = IH ?? Math.round(W * parseSvgRatio(svgString));
 
   // STEP 3: 답글 카드 PNG 생성 (@napi-rs/canvas — librsvg 완전 우회)
-  const cardH   = Math.round(imgW * CFG.CARD_RATIO);
-  const cardBuf = buildReplyCardBuffer(reply, imgW, cardH);
+  // 텍스트 길이에 따라 카드 높이가 동적으로 결정된다.
+  const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW);
 
   // STEP 4: 이미지 + 카드 세로 합성 → 저장
   await sharp({
