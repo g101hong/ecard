@@ -239,6 +239,18 @@ body {
   display: none;
 }
 
+/*
+ * 화면2(결과)는 헤더 없이 전체 화면을 사용.
+ * screen--result를 absolute로 app-frame 전체를 덮어서
+ * 이미지가 최상단부터 잘림 없이 표시되게 한다.
+ */
+.app-frame.is-result .screen--result {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ============================================================= */
 /* 6. 화면 1 — 입력 폼                                             */
 /* ============================================================= */
