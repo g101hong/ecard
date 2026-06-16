@@ -298,7 +298,7 @@ export async function generateReplyFull(rawText, options = {}) {
   let preprocessInput, extractEmotions;
   try {
     ({ preprocessInput } = await import('../emotion-engine/preprocessor.js'));
-    ({ extractEmotions } = await import('../emotion-engine/claude-extractor.js'));
+    ({ extractEmotions } = await import('../emotion-engine/ai-extractor.js'));
   } catch (importErr) {
     // emotion-engine을 찾을 수 없는 경우 시드 기반 폴백
     console.warn('[reply-engine] emotion-engine 임포트 실패, 시드 폴백 사용');
