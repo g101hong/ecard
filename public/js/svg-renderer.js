@@ -148,11 +148,31 @@ function _container() {
 }
 
 /**
- * 요소의 태그 종류에 따라 색상이 저장된 속성명을 반환한다.
- * @param {Element} el
- * @returns {string}
+ * 요소 자체 또는 내부에서 실제 색상을 보유한 요소 목록을 반환한다.
+ *
+ * Inkscape에서 하이퍼링크(<a>) 또는 그룹(<g>)에 spot ID를 부여하면
+ * 색상은 내부 <path>/<rect> 등이 가지므로, 그 경우 내부 요소를 탐색한다.
+ *
+ * @param {Element} el  spot-XX-N ID를 가진 요소
+ * @returns {Element[]}  색상 속성을 가질 가능성 있는 요소 배열
  */
-function _colorAttrName(el) {
+const COLOR_ELEMENTS = new Set(['path','rect','circle','ellipse','polygon','polyline','stop','use']);
+
+function _resolveColorElements(el) {
+  const tag = el.tagName.toLowerCase();
+  // <a> 또는 <g> 이면 내부 색상 요소를 재귀 탐색
+  if (tag === 'a' || tag === 'g') {
+    const children = Array.from(el.querySelectorAll(
+      'path, rect, circle, ellipse, polygon, polyline, stop'
+    ));
+    return children.length > 0 ? children : [];
+  }
+  // 직접 색상 요소이면 자신을 반환
+  if (COLOR_ELEMENTS.has(tag)) return [el];
+  return [];
+}
+
+
   const tag = el.tagName.toLowerCase();
   return COLOR_ATTR_BY_TAG[tag] ?? DEFAULT_COLOR_ATTR;
 }
@@ -399,25 +419,40 @@ export function applyDeltaColorsToSVG(emotionScores, diversitySeed = 0) {
     let representativeColor = null;
 
     originalElements.forEach((origEl) => {
-      // ownerDoc 전달 → url(#gradientId) 참조 자동 추적
-      const current = _readColor(origEl, originalDoc);
-      if (!current) {
-        result.skipped++;
-        return;
-      }
+      // <a>/<g> 이면 내부 색상 요소를 탐색, 직접 요소이면 자신을 사용
+      const colorEls = _resolveColorElements(origEl);
+      if (colorEls.length === 0) { result.skipped++; return; }
 
-      const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
+      colorEls.forEach((colorEl) => {
+        // ownerDoc 전달 → url(#gradientId) 참조 자동 추적
+        const current = _readColor(colorEl, originalDoc);
+        if (!current) { result.skipped++; return; }
 
-      // 화면에 실제 표시 중인 동일 id 요소에 적용
-      const liveEl = container.querySelector(`#${CSS.escape(origEl.id)}`);
-      if (liveEl) {
-        // _applyColor 사용 → 그라디언트이면 모든 <stop> stop-color 일괄 변경
-        _applyColor(liveEl, newHex, current, container.ownerDocument);
-        result.applied++;
-      }
+        const newHex = applyDeltaToHex(current.hex, emotionIdx, gp, diversitySeed);
 
-      // 패널 대표색 — 첫 번째로 성공 처리된 요소의 새 hex
-      if (representativeColor === null) representativeColor = newHex;
+        // 화면에 실제 표시 중인 동일 요소 탐색
+        // <a>/<g> 자식이므로 id가 없을 수 있어 origEl 기준으로 찾음
+        const liveAnchor = container.querySelector(`#${CSS.escape(origEl.id)}`);
+        if (!liveAnchor) return;
+
+        // 원본에서의 위치 인덱스로 live DOM의 대응 요소를 찾음
+        const siblings = Array.from(origEl.querySelectorAll
+          ? origEl.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, stop')
+          : [origEl]);
+        const idx = siblings.indexOf(colorEl);
+        const liveEl = idx >= 0
+          ? Array.from(liveAnchor.querySelectorAll(
+              'path, rect, circle, ellipse, polygon, polyline, stop'
+            ))[idx]
+          : liveAnchor;
+
+        if (liveEl) {
+          _applyColor(liveEl, newHex, current, container.ownerDocument);
+          result.applied++;
+        }
+
+        if (representativeColor === null) representativeColor = newHex;
+      });
     });
 
     result.panelColors.push({
