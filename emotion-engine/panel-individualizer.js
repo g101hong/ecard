@@ -206,7 +206,7 @@ function computePanelParams(spot, weights, globalParams, seed) {
  *
  * @param {Object} globalParams    - param-synthesizer.js 출력
  * @param {number} diversitySeed  - preprocessor.js 다양성 시드
- * @param {number} matchedSpotIdx - claude-extractor.js 매칭 경승지 인덱스
+ * @param {number} matchedSpotIdx - ai-extractor.js 매칭 경승지 인덱스
  * @returns {Object} PanelColorSet
  *
  * @example
