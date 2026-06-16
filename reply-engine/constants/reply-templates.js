@@ -29,7 +29,7 @@
  * ─────────────────────────────────────────────────────────────────
  * [감성 키값]
  *
- *   emotion-engine/claude-extractor.js의 dominantEmotion과 동일:
+ *   emotion-engine/ai-extractor.js의 dominantEmotion과 동일:
  *   amazement | peace | vitality | nostalgia |
  *   freshness | grandeur | warmth | mystery
  *
