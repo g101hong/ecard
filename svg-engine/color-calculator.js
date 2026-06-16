@@ -353,29 +353,54 @@ export function computeGlobalParams(scores) {
  * // → '#FF7A4F' (현재 색상 기준으로 이동된 결과)
  */
 export function applyDeltaToHex(currentHex, panelIndex, gp, diversitySeed = 0) {
-  const i  = clamp(Math.round(panelIndex), 0, 11);
-  const w  = PANEL_WEIGHTS[i];
+  const i   = clamp(Math.round(panelIndex), 0, 11);
+  const w   = PANEL_WEIGHTS[i];
   const cur = hexToHsl(currentHex);
 
-  // 색조: 현재값 + (글로벌ΔHue × 가중치) + 패널 단위 노이즈
+  // ── 방안B: 원본 색 특성 기반 보호 스케일링 ──────────────────────
+  //
+  // ① Hue 보호 — 원본 채도가 낮을수록 색조 이동을 줄인다.
+  //    무채색(s≈0)에서 Hue를 크게 이동하면 완전히 다른 색이 나오므로
+  //    채도에 비례해 Hue 이동량을 감쇠한다.
+  const hueScale = clamp(cur.s / 0.8, 0.0, 1.0);
+
+  // ② 채도 보호 — 원본이 이미 고채도(s > 0.65)이면 채도 증가를 억제한다.
+  //    고채도일수록 deltaSat를 1.0에 가깝게 압축한다.
+  const satProtect   = clamp((cur.s - 0.65) / 0.35, 0.0, 1.0);
+  const satEffective = gp.deltaSat > 1.0
+    ? 1.0 + (gp.deltaSat - 1.0) * (1.0 - satProtect * 0.80)
+    : gp.deltaSat;
+
+  // ③ 명도 극단 보호 — 매우 밝거나(l>0.85) 어두운(l<0.15) 색은
+  //    명도 변화를 30% 수준으로 감쇠한다.
+  const lightScale = (cur.l < 0.15 || cur.l > 0.85) ? 0.30 : 1.0;
+
+  // ④ 패널 가중치 상한 캡 — 과도한 패널 반응 억제
+  const wHue   = Math.min(w.hue,   1.25);
+  const wSat   = Math.min(w.sat,   1.25);
+  const wLight = Math.min(w.light, 1.20);
+
+  // ── 최종 HSL 계산 ────────────────────────────────────────────────
+
+  // 색조: Hue 보호 스케일 적용
   const finalH = wrapHue(
     cur.h
-    + gp.deltaHue * w.hue
-    + noiseValue(diversitySeed, i, 0) * NOISE_AMP.hue,
+    + gp.deltaHue * wHue * hueScale
+    + noiseValue(diversitySeed, i, 0) * NOISE_AMP.hue * hueScale,
   );
 
-  // 채도: 지수 스케일링 (가중치가 클수록 비선형으로 더 강하게 반응)
+  // 채도: 채도 보호 스케일 적용
   const finalS = clamp(
-    cur.s * Math.pow(gp.deltaSat, w.sat)
+    cur.s * Math.pow(satEffective, wSat)
     + noiseValue(diversitySeed, i, 1) * NOISE_AMP.sat,
     0.05, 1.0,
   );
 
-  // 명도: 선형 이동
+  // 명도: 명도 극단 보호 스케일 적용
   const finalL = clamp(
     cur.l
-    + gp.deltaLight * w.light
-    + noiseValue(diversitySeed, i, 2) * NOISE_AMP.light,
+    + gp.deltaLight * wLight * lightScale
+    + noiseValue(diversitySeed, i, 2) * NOISE_AMP.light * lightScale,
     0.08, 0.92,
   );
 
