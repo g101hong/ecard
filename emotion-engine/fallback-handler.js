@@ -496,7 +496,7 @@ function buildFallbackExtraction(diversitySeed, language = 'ko', tier = FALLBACK
  *   const fallback = handleFallback(err, {
  *     diversitySeed: pre.diversitySeed,
  *     language:      pre.language,
- *     stage:         'claude-extractor',
+ *     stage:         'ai-extractor',
  *   });
  *   // fallback.extraction, fallback.panels 사용 가능
  * }
