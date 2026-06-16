@@ -160,19 +160,17 @@ const COLOR_ELEMENTS = new Set(['path','rect','circle','ellipse','polygon','poly
 
 function _resolveColorElements(el) {
   const tag = el.tagName.toLowerCase();
-  // <a> 또는 <g> 이면 내부 색상 요소를 재귀 탐색
   if (tag === 'a' || tag === 'g') {
     const children = Array.from(el.querySelectorAll(
       'path, rect, circle, ellipse, polygon, polyline, stop'
     ));
     return children.length > 0 ? children : [];
   }
-  // 직접 색상 요소이면 자신을 반환
   if (COLOR_ELEMENTS.has(tag)) return [el];
   return [];
 }
 
-
+function _colorAttrName(el) {
   const tag = el.tagName.toLowerCase();
   return COLOR_ATTR_BY_TAG[tag] ?? DEFAULT_COLOR_ATTR;
 }
