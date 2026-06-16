@@ -280,7 +280,7 @@ export async function analyzeImpression(rawText, options = {}) {
     const fb = handleFallback(err, {
       diversitySeed: pre.diversitySeed,
       language:      pre.language,
-      stage:         'claude-extractor',
+      stage:         'ai-extractor',
     });
     extraction = fb.extraction;
   }
