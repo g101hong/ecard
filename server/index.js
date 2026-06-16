@@ -87,7 +87,7 @@ if (!KEY) {
 console.log('⏳ Gemini API 직접 호출 테스트...');
 console.log('   키 앞 10자:', KEY.slice(0, 10) + '...');
 
-// Gemini API 엔드포인트 (claude-extractor.js 와 동일 구조)
+// Gemini API 엔드포인트 (ai-extractor.js 와 동일 구조)
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MODEL    = 'gemini-2.5-flash';
 const url      = `${ENDPOINT}/${MODEL}:generateContent?key=${KEY}`;
@@ -97,7 +97,7 @@ try {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      // Gemini 요청 구조 (claude-extractor.js API_CONFIG 동일)
+      // Gemini 요청 구조 (ai-extractor.js API_CONFIG 동일)
       system_instruction: {
         parts: [{ text: '당신은 테스트 AI입니다. 한 줄로만 답하세요.' }],
       },
