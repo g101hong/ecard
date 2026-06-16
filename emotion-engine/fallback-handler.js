@@ -574,7 +574,7 @@ export function handleFallback(err, context) {
  * @returns {Promise<T | FallbackResult>}
  *
  * @example
- * // claude-extractor 단계 보호
+ * // ai-extractor 단계 보호
  * const result = await withFallback(
  *   () => extractEmotions(pre),
  *   { diversitySeed: pre.diversitySeed, language: pre.language, stage: 'extractor' }
