@@ -140,7 +140,8 @@ body {
   max-width: var(--frame-max);
   min-height: 100svh;
   background: var(--ink-2);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--line);
@@ -232,31 +233,10 @@ body {
 }
 
 /*
- * 화면2 진입 시 헤더를 SVG 이미지 위에 floating 레이어로 전환.
- * app.js에서 .app-frame에 is-result 클래스를 토글하면 적용됨.
+ * 화면2 진입 시 헤더 전체를 숨긴다.
  */
 .app-frame.is-result .app-header {
-  padding: 12px 20px;
-  border-bottom: none;
-  background: transparent;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 10;
-}
-
-.app-frame.is-result .app-header > div:first-child {
   display: none;
-}
-
-.app-frame.is-result .app-header__back {
-  background: rgba(20, 17, 15, 0.55);
-  backdrop-filter: blur(6px);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: var(--text-hi);
-  margin-top: 0;
-  margin-left: auto;
 }
 
 /* ============================================================= */
@@ -512,12 +492,12 @@ body {
 .glass-frame {
   position: relative;
   width: 100%;
-  /* aspect-ratio 제거 — 화면 내 남은 높이를 flex로 자동 배분 */
-  flex: 1;
-  min-height: 0;
+  /* 정사각형 비율 고정 — 모바일에서 잘림 방지 */
+  aspect-ratio: 1 / 1;
   background: var(--ink);
   overflow: hidden;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 #svg-container {
