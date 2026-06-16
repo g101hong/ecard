@@ -64,7 +64,6 @@ import { collectVisitContext } from '../../reply-engine/visit-context.js';
 import { classify }           from '../../reply-engine/context-classifier.js';
 import { generateReply }      from '../../reply-engine/reply-generator.js';
 import { computeGlobalParams, colorTempToFilter } from '../../svg-engine/color-calculator.js';
-import { saveToSupabase }     from '../services/supabase-logger.js';
 
 const router = Router();
 
@@ -261,7 +260,7 @@ router.post('/', async (req, res) => {
     replyResult.isFallback ? '⚠️ 답글폴백' : '✅',
   );
 
-  res.json({
+  return res.json({
     // 경승지 정보
     spotIndex,
     spotName:        typography?.spotName       ?? '',
@@ -290,16 +289,6 @@ router.post('/', async (req, res) => {
       companion:        companion    ?? null,
     },
   });
-
-  // ── 6. Supabase 저장 (응답 후 비동기 — 사용자 대기 없음) ──────────
-  saveToSupabase({
-    text:            cleanText,
-    tripDuration:    tripDuration  ?? null,
-    companion:       companion     ?? null,
-    primaryEmotion:  typography?.primaryEmotion ?? '',
-    isFallback:      emotionIsFallback,
-    processingTimeMs,
-  }).catch(err => console.error('[Supabase] 저장 실패:', err.message));
 });
 
 export default router;
