@@ -3,52 +3,66 @@
  * @description  SVG → PNG 변환 + 답글 카드 합성
  *
  * 레이아웃:
- *   ┌──────────────────────┐
- *   │  스테인드글라스 이미지  │  (정사각형, outputWidth × outputWidth)
- *   ├──────────────────────┤
- *   │  답글 카드 영역        │  (outputWidth × CARD_HEIGHT_RATIO)
- *   │   ─────              │  (구분선)
- *   │   main 문장           │  (Noto Serif CJK KR Bold)
- *   │   place 문장          │  (Noto Serif CJK KR)
- *   │   ULSAN tagline       │  (Noto Sans CJK KR, 금색)
- *   └──────────────────────┘
+ *   ┌──────────────────────────┐
+ *   │  스테인드글라스 이미지     │  (sharp — librsvg 경유)
+ *   ├──────────────────────────┤
+ *   │  답글 카드                │  (@napi-rs/canvas — TTF 직접 로드)
+ *   │   ────                   │  황금 구분선
+ *   │   main  나눔손글씨 와일드  │
+ *   │   place 나눔손글씨 와일드  │
+ *   │   ULSAN tagline           │
+ *   └──────────────────────────┘
  *
- * 폰트: Noto Serif/Sans CJK KR (서버 시스템 폰트, librsvg 경유)
+ * 폰트: assets/NanumWaIrDeu.ttf → GlobalFonts.registerFromPath()
+ *   librsvg/시스템 폰트 설치 불필요.
  */
 
 'use strict';
 
-import sharp     from 'sharp';
-import { mkdir } from 'fs/promises';
-import path      from 'path';
+import sharp                        from 'sharp';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { mkdir, readFile }          from 'fs/promises';
+import path                         from 'path';
+import { fileURLToPath }            from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ── 폰트 등록 (모듈 최초 로드 시 1회) ─────────────────────────
+let _fontRegistered = false;
+
+function ensureFont() {
+  if (_fontRegistered) return;
+  const ttfPath = path.resolve(__dirname, '../assets/NanumWaIrDeu.ttf');
+  try {
+    GlobalFonts.registerFromPath(ttfPath, 'NanumWaIrDeu');
+    _fontRegistered = true;
+    console.log('[png-exporter] NanumWaIrDeu 폰트 등록 완료');
+  } catch (err) {
+    console.warn('[png-exporter] 폰트 등록 실패, 시스템 폰트 사용:', err.message);
+    _fontRegistered = true; // 재시도 방지
+  }
+}
 
 // ── 출력 설정 ──────────────────────────────────────────────────
 const CFG = Object.freeze({
-  DEFAULT_WIDTH:        1200,
-  COMPRESSION_LEVEL:    8,
-  CARD_HEIGHT_RATIO:    0.30,   // 이미지 너비 대비 카드 영역 높이 비율
-  PAD_X_RATIO:          0.07,   // 좌우 패딩 비율
-  BG_IMAGE:             '#14110F',  // 이미지 배경 (최외곽)
-  BG_CARD:              '#1C1710',  // 답글 카드 배경
-  LINE_COLOR:           '#3A332C',  // 카드 상단 구분선
-  COLOR_MAIN:           '#F4ECE0',  // main 문장색
-  COLOR_PLACE:          '#B0A090',  // place 문장색
-  COLOR_TAGLINE:        '#C8A84B',  // tagline 금색
-  FONT_SERIF:           'Noto Serif CJK KR',
-  FONT_SANS:            'Noto Sans CJK KR',
+  DEFAULT_WIDTH:      1200,
+  COMPRESSION_LEVEL:  8,
+  CARD_RATIO:         0.30,  // 카드 높이 = 이미지 너비 × 이 비율
+  PAD_X_RATIO:        0.07,
+  BG_IMAGE:           '#14110F',
+  BG_CARD:            '#1C1710',
+  LINE_DIVIDER:       '#3A332C',
+  COLOR_ACCENT:       '#C8A84B',
+  COLOR_MAIN:         '#F4ECE0',
+  COLOR_PLACE:        '#B0A090',
+  COLOR_TAGLINE:      '#C8A84B',
+  FONT_HAND:          'NanumWaIrDeu',
+  FONT_SANS:          'Noto Sans CJK KR',
 });
 
 // ── 유틸 ──────────────────────────────────────────────────────
-async function ensureDir(filePath) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-}
-
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+async function ensureDir(p) {
+  await mkdir(path.dirname(p), { recursive: true });
 }
 
 function parseSvgRatio(svgString) {
@@ -58,53 +72,64 @@ function parseSvgRatio(svgString) {
   return (p.length >= 4 && p[2] > 0 && p[3] > 0) ? p[3] / p[2] : 1.0;
 }
 
-// ── 답글 카드 SVG 생성 ─────────────────────────────────────────
-function buildReplyCard(reply, W, H) {
-  const px    = Math.round(W * CFG.PAD_X_RATIO);
-  const fMain = Math.round(W * 0.036);
-  const fPl   = Math.round(W * 0.020);
-  const fTag  = Math.round(W * 0.013);
+// ── 답글 카드 PNG 버퍼 생성 (@napi-rs/canvas) ─────────────────
+function buildReplyCardBuffer(reply, W, H) {
+  ensureFont();
 
-  // 구분선: 카드 상단 12%
-  const lineY  = Math.round(H * 0.14);
-  const lineW  = Math.round(W * 0.05);
+  const canvas = createCanvas(W, H);
+  const ctx    = canvas.getContext('2d');
 
-  // 텍스트 Y (baseline)
-  const mainY  = Math.round(H * 0.43);
+  const px     = Math.round(W * CFG.PAD_X_RATIO);
+  const fMain  = Math.round(W * 0.036);
+  const fPlace = Math.round(W * 0.020);
+  const fTag   = Math.round(W * 0.013);
+
+  // ── 배경 ───────────────────────────────────────────────────
+  ctx.fillStyle = CFG.BG_CARD;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── 상단 경계선 ────────────────────────────────────────────
+  ctx.fillStyle = CFG.LINE_DIVIDER;
+  ctx.globalAlpha = 0.6;
+  ctx.fillRect(0, 0, W, 1);
+  ctx.globalAlpha = 1;
+
+  // ── 황금 구분 단선 ─────────────────────────────────────────
+  const lineY = Math.round(H * 0.14);
+  const lineW = Math.round(W * 0.05);
+  ctx.fillStyle = CFG.COLOR_ACCENT;
+  ctx.beginPath();
+  ctx.roundRect(px, lineY, lineW, 2, 1);
+  ctx.fill();
+
+  // ── main 문장 ─────────────────────────────────────────────
+  const mainY = Math.round(H * 0.43);
+  ctx.fillStyle = CFG.COLOR_MAIN;
+  ctx.font = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  ctx.fillText(reply.main ?? '', px, mainY);
+
+  // ── place 문장 ────────────────────────────────────────────
   const placeY = Math.round(H * 0.64);
-  const tagY   = Math.round(H * 0.85);
+  ctx.fillStyle = CFG.COLOR_PLACE;
+  ctx.font = `${fPlace}px '${CFG.FONT_HAND}'`;
+  ctx.fillText(reply.place ?? '', px, placeY);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-  <!-- 배경 -->
-  <rect width="${W}" height="${H}" fill="${CFG.BG_CARD}"/>
-  <!-- 상단 경계선 -->
-  <rect width="${W}" height="1" fill="${CFG.LINE_COLOR}" opacity="0.6"/>
-  <!-- 황금 구분 단선 -->
-  <rect x="${px}" y="${lineY}" width="${lineW}" height="2" fill="${CFG.COLOR_TAGLINE}" rx="1"/>
-  <!-- main -->
-  <text x="${px}" y="${mainY}"
-    font-family="${CFG.FONT_SERIF}" font-size="${fMain}"
-    font-weight="bold" fill="${CFG.COLOR_MAIN}"
-  >${esc(reply.main)}</text>
-  <!-- place -->
-  <text x="${px}" y="${placeY}"
-    font-family="${CFG.FONT_SERIF}" font-size="${fPl}"
-    fill="${CFG.COLOR_PLACE}"
-  >${esc(reply.place)}</text>
-  <!-- tagline -->
-  <text x="${px}" y="${tagY}"
-    font-family="${CFG.FONT_SANS}" font-size="${fTag}"
-    fill="${CFG.COLOR_TAGLINE}" letter-spacing="3"
-  >${esc(reply.tagline)}</text>
-</svg>`;
+  // ── tagline ───────────────────────────────────────────────
+  const tagY = Math.round(H * 0.85);
+  ctx.fillStyle = CFG.COLOR_TAGLINE;
+  ctx.font = `${fTag}px '${CFG.FONT_SANS}', 'Noto Serif CJK KR', sans-serif`;
+  ctx.letterSpacing = '3px';
+  ctx.fillText(reply.tagline ?? '', px, tagY);
+
+  return canvas.toBuffer('image/png');
 }
 
 // ── 메인 변환 함수 ─────────────────────────────────────────────
 export async function svgToPng(
   svgString,
   outputPath,
-  size = CFG.DEFAULT_WIDTH,
-  reply = null,
+  size    = CFG.DEFAULT_WIDTH,
+  reply   = null,
 ) {
   if (!svgString?.trim()) throw new Error('svgString이 비어있습니다.');
   if (!outputPath)        throw new Error('outputPath가 없습니다.');
@@ -112,49 +137,40 @@ export async function svgToPng(
   const W = Math.round(Math.max(400, Math.min(2400, size)));
   await ensureDir(outputPath);
 
+  // STEP 1: SVG → PNG 래스터라이즈 (sharp/librsvg)
   const svgBuf = Buffer.from(svgString, 'utf-8');
-
-  // ── reply 없음: 이미지만 저장 ───────────────────────────────
-  if (!reply?.main) {
-    await sharp(svgBuf)
-      .resize({ width: W })
-      .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
-      .toFile(outputPath);
-    return outputPath;
-  }
-
-  // ── reply 있음: 이미지 + 답글 카드 세로 합성 ─────────────────
-
-  // STEP 1: SVG → PNG 래스터라이즈
   const imgBuf = await sharp(svgBuf)
     .resize({ width: W })
     .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
     .toBuffer();
 
-  // STEP 2: 실제 이미지 높이 확인
-  const { width: imgW, height: imgH } = await sharp(imgBuf).metadata();
-  const IW = imgW ?? W;
-  const IH = imgH ?? Math.round(W * parseSvgRatio(svgString));
+  // reply 없으면 이미지만 저장
+  if (!reply?.main) {
+    await sharp(imgBuf).toFile(outputPath);
+    return outputPath;
+  }
 
-  // STEP 3: 답글 카드 생성
-  const cardH   = Math.round(IW * CFG.CARD_HEIGHT_RATIO);
-  const cardSvg = buildReplyCard(reply, IW, cardH);
-  const cardBuf = await sharp(Buffer.from(cardSvg, 'utf-8'))
-    .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
-    .toBuffer();
+  // STEP 2: 실제 이미지 크기 확인
+  const { width: IW, height: IH } = await sharp(imgBuf).metadata();
+  const imgW = IW ?? W;
+  const imgH = IH ?? Math.round(W * parseSvgRatio(svgString));
 
-  // STEP 4: 전체 캔버스(이미지 + 카드) 합성 → 저장
+  // STEP 3: 답글 카드 PNG 생성 (@napi-rs/canvas — librsvg 완전 우회)
+  const cardH   = Math.round(imgW * CFG.CARD_RATIO);
+  const cardBuf = buildReplyCardBuffer(reply, imgW, cardH);
+
+  // STEP 4: 이미지 + 카드 세로 합성 → 저장
   await sharp({
     create: {
-      width:      IW,
-      height:     IH + cardH,
+      width:      imgW,
+      height:     imgH + cardH,
       channels:   4,
       background: CFG.BG_IMAGE,
     },
   })
   .composite([
-    { input: imgBuf,  top: 0,  left: 0 },
-    { input: cardBuf, top: IH, left: 0 },
+    { input: imgBuf,  top: 0,    left: 0 },
+    { input: cardBuf, top: imgH, left: 0 },
   ])
   .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
   .toFile(outputPath);
