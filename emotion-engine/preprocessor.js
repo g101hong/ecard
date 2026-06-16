@@ -359,7 +359,7 @@ export function assessQuality(cleanText, language = 'ko') {
  * @property {number}       diversitySeed       다양성 주입용 결정론적 시드
  * @property {Object}       metadata            처리 메타데이터
  *
- * [의미론적 분석 — claude-extractor.js AI가 채움]
+ * [의미론적 분석 — ai-extractor.js AI가 채움]
  * @property {null}         contextAnalysis     AI 분석 전: null
  * @property {null}         emotionScores       AI 분석 전: null
  * @property {null}         colorParams         AI 분석 전: null
