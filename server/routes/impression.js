@@ -190,7 +190,7 @@ router.post('/', async (req, res) => {
   const visitCtx = collectVisitContext();
 
   // 사용자가 선택한 동행 정보를 visitCtx에 주입 (옵션)
-  // claude-extractor의 buildUserPrompt가 이 값을 프롬프트에 포함한다.
+  // ai-extractor의 buildUserPrompt가 이 값을 프롬프트에 포함한다.
   if (companionKey) {
     visitCtx.companionOverride = companionKey;
   }
