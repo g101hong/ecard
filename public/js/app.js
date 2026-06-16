@@ -203,6 +203,9 @@ async function onSubmit() {
       // 이 시점에 SVG 색채 전환 + 블러 해제를 실행한다.
       // 사용자는 답글을 기다리는 동안 색채 애니메이션을 본다.
       onColors: (colorsData) => {
+        // emotionScores를 임시 저장 — onReply에서 renderResultFromReply가 사용
+        window._ecardColorData = colorsData;
+
         // SVG 색채 delta 적용 (현재 SVG 색상 기준)
         const colorResult = applyDeltaColorsToSVG(
           colorsData.emotionScores,
