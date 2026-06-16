@@ -115,11 +115,13 @@ function buildReplyCardBuffer(reply, W, H) {
   ctx.fillText(reply.place ?? '', px, placeY);
 
   // ── tagline ───────────────────────────────────────────────
+  // NanumWaIrDeu에 em dash(—)가 없으므로 하이픈으로 정규화
   const tagY = Math.round(H * 0.85);
+  const taglineText = (reply.tagline ?? '').replace(/—/g, '-');
   ctx.fillStyle = CFG.COLOR_TAGLINE;
-  ctx.font = `${fTag}px '${CFG.FONT_SANS}', 'Noto Serif CJK KR', sans-serif`;
-  ctx.letterSpacing = '3px';
-  ctx.fillText(reply.tagline ?? '', px, tagY);
+  ctx.font = `${fTag}px '${CFG.FONT_HAND}'`;
+  ctx.letterSpacing = '2px';
+  ctx.fillText(taglineText, px, tagY);
 
   return canvas.toBuffer('image/png');
 }
