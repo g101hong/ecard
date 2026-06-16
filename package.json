@@ -1,20 +1,21 @@
 {
   "type": "module",
   "dependencies": {
-    "express":             "^4.18.x",
-    "cors":                "^2.8.x",
-    "dotenv":              "^16.x",
-    "jsdom":               "^24.x",
-    "sharp":               "^0.33.x",
-    "express-rate-limit":  "^7.x",
-    "winston":             "^3.x",
-    "uuid":                "^9.x"
+    "@napi-rs/canvas": "^0.1.x",
+    "cors": "^2.8.x",
+    "dotenv": "^16.x",
+    "express": "^4.18.x",
+    "express-rate-limit": "^7.x",
+    "jsdom": "^24.x",
+    "sharp": "^0.33.x",
+    "uuid": "^9.x",
+    "winston": "^3.x"
   },
   "devDependencies": {
     "nodemon": "^3.x"
   },
   "scripts": {
     "start": "node server/index.js",
-    "dev":   "nodemon server/index.js"
+    "dev": "nodemon server/index.js"
   }
 }
