@@ -611,8 +611,69 @@ body {
   flex-direction: column;
   gap: 18px;
   padding: 28px 24px 24px;
+  position: relative;
+  overflow: hidden;
   background:
     linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
+}
+
+/* ── 방안 2: 상단 글로우 ────────────────────────────────────────
+ * has-glow 클래스가 붙으면 JS가 설정한 --glow-primary/secondary/tertiary
+ * 변수를 이용해 이미지-답글 경계에서 주색이 발광하듯 퍼진다.
+ * ::before — 주색1 타원형 빛 (중앙 상단에서 아래로 퍼짐)
+ * ::after  — 주색2 보조 빛 (우상단에서 좌하로 대각)
+ */
+.reply-card::before,
+.reply-card::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+  opacity: 0;
+}
+
+.reply-card.has-glow::before {
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 110%;
+  height: 220px;
+  background: radial-gradient(
+    ellipse 70% 100% at 50% 0%,
+    color-mix(in srgb, var(--glow-primary) 38%, transparent),
+    transparent 70%
+  );
+  opacity: 1;
+  animation: glowFadeIn 1.0s ease forwards;
+}
+
+.reply-card.has-glow::after {
+  top: -40px;
+  right: -20%;
+  width: 70%;
+  height: 180px;
+  background: radial-gradient(
+    ellipse 80% 80% at 80% 0%,
+    color-mix(in srgb, var(--glow-secondary) 22%, transparent),
+    transparent 70%
+  );
+  opacity: 1;
+  animation: glowFadeIn 1.2s ease 0.2s forwards;
+}
+
+@keyframes glowFadeIn {
+  from { opacity: 0; transform: translateX(-50%) scaleY(0.7); }
+  to   { opacity: 1; transform: translateX(-50%) scaleY(1.0); }
+}
+
+/* ::after는 translateX(-50%)를 쓰지 않으므로 별도 keyframe */
+.reply-card.has-glow::after {
+  animation: glowFadeInSimple 1.2s ease 0.2s forwards;
+}
+
+@keyframes glowFadeInSimple {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .reply-card__meta {
