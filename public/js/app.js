@@ -294,14 +294,8 @@ function onReset() {
 
   resetSVG();
 
-  // 글로우 초기화
-  const card = document.querySelector('.reply-card');
-  if (card) {
-    card.classList.remove('has-glow');
-    card.style.removeProperty('--glow-primary');
-    card.style.removeProperty('--glow-secondary');
-    card.style.removeProperty('--glow-tertiary');
-  }
+  // 글로우 레이어 제거
+  document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 
   hideError();
   showScreen('input');
@@ -460,27 +454,53 @@ function renderResult(data) {
 }
 
 // =============================================================================
-// applyGlowColors — 주색 CSS 변수 적용 (방안 2: 상단 글로우)
+// applyGlowColors — 이미지-카드 경계에 글로우 레이어 삽입 (방안 2)
 // =============================================================================
 
 /**
- * 감성 점수에서 주색을 추출하여 답글 카드 상단 글로우에 적용한다.
- * .reply-card에 CSS 변수 --glow-primary/secondary/tertiary 를 설정하고
- * has-glow 클래스를 추가하면 main.css의 ::before 글로우가 활성화된다.
+ * 감성 점수에서 주색을 추출하고, 이미지-카드 경계에 .glow-layer div를 삽입한다.
+ * PNG 저장과 동일한 구조: 경계선 기준 위(이미지 안) + 아래(카드 안) 양방향 발광.
  * @param {Object} scores
  */
 function applyGlowColors(scores) {
   const result = extractDominantColors(scores);
   if (!result) return;
 
-  const { primary, secondary, tertiary } = result;
-  const card = document.querySelector('.reply-card');
-  if (!card) return;
+  const { primary, secondary } = result;
 
-  card.style.setProperty('--glow-primary',   primary);
-  card.style.setProperty('--glow-secondary', secondary);
-  card.style.setProperty('--glow-tertiary',  tertiary);
-  card.classList.add('has-glow');
+  // 기존 글로우 레이어 제거
+  document.querySelectorAll('.glow-layer').forEach(el => el.remove());
+
+  // 이미지 컨테이너와 결과 영역 위치 측정
+  const glassFrame = document.querySelector('.glass-frame');
+  const resultArea = document.querySelector('.screen--result');
+  if (!glassFrame || !resultArea) return;
+
+  // offsetTop 체인으로 resultArea 기준 절대 위치 계산
+  let offsetTop = 0;
+  let el = glassFrame;
+  while (el && el !== resultArea) {
+    offsetTop += el.offsetTop;
+    el = el.offsetParent;
+  }
+  const boundaryY = offsetTop + glassFrame.offsetHeight;
+
+  // 이미지 높이 기반 글로우 범위 계산 (PNG와 동일한 비율)
+  const imgH      = frameRect.height;
+  const glowAbove = Math.round(imgH * 0.18);  // 이미지 안으로
+  const glowBelow = Math.round(imgH * 0.40);  // 카드 안으로
+  const glowH     = glowAbove + glowBelow;
+
+  const layer = document.createElement('div');
+  layer.className = 'glow-layer';
+  layer.style.cssText = `
+    top: ${boundaryY - glowAbove}px;
+    height: ${glowH}px;
+    --glow-primary: ${primary};
+    --glow-secondary: ${secondary};
+  `;
+
+  resultArea.appendChild(layer);
 }
 
 // =============================================================================
