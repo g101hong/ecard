@@ -612,71 +612,66 @@ body {
   gap: 18px;
   padding: 28px 24px 24px;
   position: relative;
-  overflow: hidden;
   background:
     linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
 }
 
 /* ── 방안 2: 상단 글로우 ────────────────────────────────────────
- * has-glow 클래스가 붙으면 JS가 설정한 --glow-primary/secondary/tertiary
- * 변수를 이용해 이미지-답글 경계에서 주색이 발광하듯 퍼진다.
- * ::before — 주색1 타원형 빛 (중앙 상단에서 아래로 퍼짐)
- * ::after  — 주색2 보조 빛 (우상단에서 좌하로 대각)
+ * JS가 .screen--result 내에 .glow-layer div를 삽입하고
+ * CSS 변수 --glow-primary/secondary/tertiary를 설정한다.
+ * 이미지-카드 경계에 position:absolute로 걸쳐서
+ * PNG 합성과 동일한 효과를 낸다.
  */
-.reply-card::before,
-.reply-card::after {
-  content: '';
+.glow-layer {
   position: absolute;
+  left: 0;
+  width: 100%;
   pointer-events: none;
-  transition: opacity 0.8s ease;
-  opacity: 0;
+  z-index: 2;
+  /* top / height 는 JS에서 동적으로 설정 */
 }
 
-.reply-card.has-glow::before {
-  top: -60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 130%;
-  height: 280px;
+.glow-layer::before,
+.glow-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 주색1 — 중앙 방사형 */
+.glow-layer::before {
   background: radial-gradient(
-    ellipse 75% 100% at 50% 0%,
-    color-mix(in srgb, var(--glow-primary) 55%, transparent),
-    color-mix(in srgb, var(--glow-primary) 22%, transparent) 40%,
-    transparent 72%
+    ellipse 80% 60% at 50% 100%,
+    var(--glow-primary)   0%,
+    transparent           70%
   );
-  opacity: 1;
+  opacity: 0.55;
   animation: glowFadeIn 1.0s ease forwards;
 }
 
-.reply-card.has-glow::after {
-  top: -40px;
-  right: -10%;
-  width: 80%;
-  height: 220px;
+/* 주색2 — 우측 보조 */
+.glow-layer::after {
   background: radial-gradient(
-    ellipse 80% 80% at 80% 0%,
-    color-mix(in srgb, var(--glow-secondary) 38%, transparent),
-    color-mix(in srgb, var(--glow-secondary) 14%, transparent) 45%,
-    transparent 72%
+    ellipse 55% 55% at 82% 100%,
+    var(--glow-secondary) 0%,
+    transparent           68%
   );
-  opacity: 1;
-  animation: glowFadeInSimple 1.2s ease 0.2s forwards;
+  opacity: 0.40;
+  animation: glowFadeInSimple 1.2s ease 0.15s forwards;
 }
 
 @keyframes glowFadeIn {
-  from { opacity: 0; transform: translateX(-50%) scaleY(0.7); }
-  to   { opacity: 1; transform: translateX(-50%) scaleY(1.0); }
-}
-
-/* ::after는 translateX(-50%)를 쓰지 않으므로 별도 keyframe */
-.reply-card.has-glow::after {
-  animation: glowFadeInSimple 1.2s ease 0.2s forwards;
+  from { opacity: 0; }
+  to   { opacity: 0.55; }
 }
 
 @keyframes glowFadeInSimple {
   from { opacity: 0; }
-  to   { opacity: 1; }
+  to   { opacity: 0.40; }
 }
+
+/* reply-card는 overflow: hidden 제거 — 글로우가 카드 밖으로 나가야 함 */
 
 .reply-card__meta {
   display: flex;
