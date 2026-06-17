@@ -111,7 +111,7 @@ function sanitizeReply(reply) {
  * }
  */
 router.post('/', async (req, res) => {
-  const { emotionScores, diversitySeed, reply, size } = req.body;
+  const { emotionScores, reply, size } = req.body;
 
   // ── 1. 입력값 검증 ─────────────────────────────────────────────
   const scoreResult = validateEmotionScores(emotionScores);
@@ -119,15 +119,10 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: scoreResult.error });
   }
 
-  const seed = typeof diversitySeed === 'number' ? diversitySeed
-             : parseInt(diversitySeed, 10) || 0;
-
   const cleanReply  = sanitizeReply(reply);
   const outputSize  = Math.min(Math.max(parseInt(size, 10) || 1200, 400), 2400);
 
-  // ── 2. SVG 색채 패치 + PNG 변환/저장 (generateCardPNG 단일 호출) ──
-  // v2: patchSVG가 'spot-XX-N' 요소를 자동 탐색하여 현재 색 기준으로
-  // delta를 적용한다 (케이스 B — 원본 SVG 기준, 결정론적·비누적).
+  // ── 2. 원본 SVG → PNG 변환/저장 ──────────────────────────────────
   const fileName   = `${uuidv4()}.png`;
   const outputPath = path.join(OUTPUT_DIR, fileName);
 
@@ -135,7 +130,6 @@ router.post('/', async (req, res) => {
   try {
     savedPath = await generateCardPNG({
       emotionScores: scoreResult.cleaned,
-      diversitySeed: seed,
       outputPath,
       size: outputSize,
       reply: cleanReply,

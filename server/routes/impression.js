@@ -69,7 +69,6 @@
 import { Router }             from 'express';
 import { analyzeImpression }  from '../../emotion-engine/index.js';
 import { collectVisitContext } from '../../reply-engine/visit-context.js';
-import { computeGlobalParams, colorTempToFilter } from '../../svg-engine/color-calculator.js';
 import { saveToSupabase }     from '../services/supabase-logger.js';
 
 const router = Router();
@@ -170,30 +169,18 @@ router.post('/', async (req, res) => {
   }
 
   const { emotionScores, typography, isFallback: emotionIsFallback, meta } = emotionResult;
-  const diversitySeed = meta?.diversitySeed ?? 0;
-  const spotIndex     = typography?.spotIndex ?? 0;
-
-  // ── 5. SVG 색채 파라미터 계산 ────────────────────────────────────
-  const gp = computeGlobalParams(emotionScores);
-  const colorTempFilterStr = colorTempToFilter(gp.colorTemp);
+  const spotIndex = typography?.spotIndex ?? 0;
 
   const processingTimeMs = Date.now() - t0;
 
   // ─────────────────────────────────────────────────────────────────
-  // Phase 1: colors 이벤트 전송 — SVG 색채 전환에 필요한 최소 데이터
-  //
-  // 클라이언트는 이 이벤트를 받는 즉시:
-  //   ① applyDeltaColorsToSVG(emotionScores, diversitySeed)
-  //   ② revealSVG() — 블러 해제 애니메이션 시작
-  //   ③ renderPaletteStrip()
+  // Phase 1: colors 이벤트 — emotionScores 전달 (스펙트럼/폰트 선택용)
   // ─────────────────────────────────────────────────────────────────
   sendEvent(res, 'colors', {
-    type:            'colors',
+    type:        'colors',
     spotIndex,
-    spotName:        typography?.spotName       ?? '',
+    spotName:    typography?.spotName ?? '',
     emotionScores,
-    colorTempFilter: colorTempFilterStr,
-    diversitySeed,
     meta: {
       processingTimeMs,
       isFallback: emotionIsFallback,
