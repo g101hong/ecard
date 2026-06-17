@@ -22,25 +22,55 @@
 import sharp                        from 'sharp';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { mkdir, readFile }          from 'fs/promises';
+import { existsSync }               from 'fs';
 import path                         from 'path';
 import { fileURLToPath }            from 'url';
+import { EMOTION_FONT_MAP,
+         FALLBACK_FONT,
+         pickFontByEmotion }        from './emotion-fonts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ASSETS_DIR = path.resolve(__dirname, '../assets');
 
 // ── 폰트 등록 (모듈 최초 로드 시 1회) ─────────────────────────
-let _fontRegistered = false;
+// 8개 감성 폰트 TTF를 모두 시도해서 GlobalFonts에 등록한다.
+// assets/에 파일이 없으면 해당 폰트는 등록 건너뛰고 폴백된다.
+let _fontsRegistered = false;
+const _availableFonts = new Set();
 
-function ensureFont() {
-  if (_fontRegistered) return;
-  const ttfPath = path.resolve(__dirname, '../assets/NanumWaIrDeu.ttf');
-  try {
-    GlobalFonts.registerFromPath(ttfPath, 'NanumWaIrDeu');
-    _fontRegistered = true;
-    console.log('[png-exporter] NanumWaIrDeu 폰트 등록 완료');
-  } catch (err) {
-    console.warn('[png-exporter] 폰트 등록 실패, 시스템 폰트 사용:', err.message);
-    _fontRegistered = true; // 재시도 방지
+function ensureFonts() {
+  if (_fontsRegistered) return;
+  _fontsRegistered = true;
+
+  for (const [emotion, fontInfo] of Object.entries(EMOTION_FONT_MAP)) {
+    const ttfPath = path.join(ASSETS_DIR, fontInfo.ttfPath);
+    if (!existsSync(ttfPath)) {
+      console.warn(`[png-exporter] ${fontInfo.ttfPath} 없음 → ${emotion} 감성은 폴백 폰트 사용`);
+      continue;
+    }
+    try {
+      GlobalFonts.registerFromPath(ttfPath, fontInfo.family);
+      _availableFonts.add(fontInfo.family);
+    } catch (err) {
+      console.warn(`[png-exporter] ${fontInfo.family} 등록 실패:`, err.message);
+    }
   }
+
+  console.log(
+    `[png-exporter] 폰트 등록 완료 (${_availableFonts.size}/${Object.keys(EMOTION_FONT_MAP).length}):`,
+    [..._availableFonts].join(', '),
+  );
+}
+
+/**
+ * 감성에 맞는 폰트 family명을 반환한다.
+ * 해당 폰트가 등록 안 되어 있으면 NanumWaIrDeu 폴백.
+ */
+function resolveFontFamily(emotionScores) {
+  ensureFonts();
+  const { font } = pickFontByEmotion(emotionScores);
+  if (_availableFonts.has(font.family)) return font.family;
+  return FALLBACK_FONT.family;
 }
 
 // ── 출력 설정 ──────────────────────────────────────────────────
@@ -138,8 +168,9 @@ function fillWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 // ── 답글 카드 PNG 버퍼 생성 (@napi-rs/canvas) ─────────────────
-function buildReplyCardBuffer(reply, W) {
-  ensureFont();
+function buildReplyCardBuffer(reply, W, emotionScores = null) {
+  // dominant 감성에 맞는 폰트 결정 (없으면 NanumWaIrDeu)
+  const fontFamily = resolveFontFamily(emotionScores);
 
   const px      = Math.round(W * CFG.PAD_X_RATIO);
   const maxTextW = W - px * 2;   // 텍스트 최대 너비 (양쪽 패딩 제외)
@@ -156,13 +187,13 @@ function buildReplyCardBuffer(reply, W) {
   const dummy = createCanvas(W, 10);
   const dctx  = dummy.getContext('2d');
 
-  dctx.font = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  dctx.font = `bold ${fMain}px '${fontFamily}'`;
   const mainLines  = breakLines(dctx, reply.main  ?? '', maxTextW);
 
-  dctx.font = `${fPlace}px '${CFG.FONT_HAND}'`;
+  dctx.font = `${fPlace}px '${fontFamily}'`;
   const placeLines = breakLines(dctx, reply.place ?? '', maxTextW);
 
-  dctx.font = `${fTag}px '${CFG.FONT_HAND}'`;
+  dctx.font = `${fTag}px '${fontFamily}'`;
   const tagText    = (reply.tagline ?? '').replace(/—/g, '-');
   const tagLines   = breakLines(dctx, tagText, maxTextW);
 
@@ -205,19 +236,19 @@ function buildReplyCardBuffer(reply, W) {
 
   // main
   ctx.fillStyle = CFG.COLOR_MAIN;
-  ctx.font      = `bold ${fMain}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `bold ${fMain}px '${fontFamily}'`;
   ctx.letterSpacing = '0px';
   fillWrappedText(ctx, reply.main ?? '', px, mainY, maxTextW, lhMain);
 
   // place
   ctx.fillStyle = CFG.COLOR_PLACE;
-  ctx.font      = `${fPlace}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `${fPlace}px '${fontFamily}'`;
   ctx.letterSpacing = '0px';
   fillWrappedText(ctx, reply.place ?? '', px, placeY, maxTextW, lhPlace);
 
   // tagline
   ctx.fillStyle = CFG.COLOR_TAGLINE;
-  ctx.font      = `${fTag}px '${CFG.FONT_HAND}'`;
+  ctx.font      = `${fTag}px '${fontFamily}'`;
   ctx.letterSpacing = '2px';
   fillWrappedText(ctx, tagText, px, tagY, maxTextW, lhTag);
 
@@ -225,11 +256,22 @@ function buildReplyCardBuffer(reply, W) {
 }
 
 // ── 메인 변환 함수 ─────────────────────────────────────────────
+/**
+ * SVG를 PNG로 변환하고, reply가 있으면 답글 카드를 합성한다.
+ *
+ * @param {string} svgString
+ * @param {string} outputPath
+ * @param {number} [size=1200]              이미지 너비(px)
+ * @param {Object|null} [reply]             { main, place, tagline }
+ * @param {Object|null} [emotionScores]     8차원 감성 점수 (폰트 선택용)
+ * @returns {Promise<string>}
+ */
 export async function svgToPng(
   svgString,
   outputPath,
-  size    = CFG.DEFAULT_WIDTH,
-  reply   = null,
+  size           = CFG.DEFAULT_WIDTH,
+  reply          = null,
+  emotionScores  = null,
 ) {
   if (!svgString?.trim()) throw new Error('svgString이 비어있습니다.');
   if (!outputPath)        throw new Error('outputPath가 없습니다.');
@@ -256,8 +298,8 @@ export async function svgToPng(
   const imgH = IH ?? Math.round(W * parseSvgRatio(svgString));
 
   // STEP 3: 답글 카드 PNG 생성 (@napi-rs/canvas — librsvg 완전 우회)
-  // 텍스트 길이에 따라 카드 높이가 동적으로 결정된다.
-  const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW);
+  // dominant 감성에 맞는 폰트로 렌더링됨.
+  const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
 
   // STEP 4: 이미지 + 카드 세로 합성 → 저장
   await sharp({
