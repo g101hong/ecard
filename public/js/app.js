@@ -486,7 +486,7 @@ function applyGlowColors(scores) {
   const boundaryY = offsetTop + glassFrame.offsetHeight;
 
   // 이미지 높이 기반 글로우 범위 계산 (PNG와 동일한 비율)
-  const imgH      = frameRect.height;
+  const imgH      = glassFrame.offsetHeight;
   const glowAbove = Math.round(imgH * 0.18);  // 이미지 안으로
   const glowBelow = Math.round(imgH * 0.40);  // 카드 안으로
   const glowH     = glowAbove + glowBelow;
