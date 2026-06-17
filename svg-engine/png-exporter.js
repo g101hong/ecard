@@ -232,6 +232,40 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
 
+  // ── 배경 2: 방사형 빛 — ellipse scale() 트릭으로 CSS와 동일하게 재현 ──
+  if (emotionScores) {
+    const _cr = extractDominantColors(emotionScores);
+    if (_cr) {
+      const _fillEG = (c, cxR, cyR, rxR, ryR, hex, stops) => {
+        const cx = W * cxR, cy = H * cyR;
+        const rx = W * rxR, ry = H * ryR;
+        const r  = Math.max(rx, ry);
+        const sx = rx / r, sy = ry / r;
+        c.save();
+        c.translate(cx, cy);
+        c.scale(sx, sy);
+        const g = c.createRadialGradient(0, 0, 0, 0, 0, r);
+        for (const { pos, alpha } of stops)
+          g.addColorStop(pos, _hexWithAlpha(hex, alpha));
+        c.fillStyle = g;
+        c.fillRect(-cx / sx, -cy / sy, W / sx, H / sy);
+        c.restore();
+      };
+      // 웹: ellipse 62% 45% at 88% 8%,  rgba(primary,   0.18)
+      _fillEG(ctx, 0.88, 0.08, 0.62, 0.45, _cr.primary, [
+        { pos: 0.00, alpha: 0.55 },
+        { pos: 0.45, alpha: 0.15 },
+        { pos: 1.00, alpha: 0.00 },
+      ]);
+      // 웹: ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12)
+      _fillEG(ctx, 0.12, 0.92, 0.50, 0.38, _cr.secondary, [
+        { pos: 0.00, alpha: 0.40 },
+        { pos: 0.50, alpha: 0.10 },
+        { pos: 1.00, alpha: 0.00 },
+      ]);
+    }
+  }
+
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
   ctx.globalAlpha = 0.6;
@@ -336,74 +370,96 @@ export async function svgToPng(
   if (colorResult) {
     const { primary, secondary } = colorResult;
 
-    // ── 글로우 레이어: 카드 영역만 (SVG 이미지에 걸치지 않음) ──────
-    // 웹 reply-card::before: ellipse 85% 70% at 50% 0%, opacity 0.42
-    //                        ellipse 55% 55% at 82% 0%, opacity 0.30
+    // ── CSS ellipse radial-gradient를 canvas로 재현하는 헬퍼 ─────────
+    // canvas는 원형 gradient만 지원. ctx.scale()로 타원을 근사한다.
+    //
+    // 사용법: fillEllipseGradient(ctx, W, H, cx%, cy%, rx%, ry%, stops)
+    //   cx/cy: 중심 위치 (0~1, 캔버스 전체 기준)
+    //   rx/ry: CSS ellipse 비율 (0~1, 캔버스 너비/높이 기준)
+    //   stops: [{pos, alpha}]
+    function fillEllipseGradient(c, W, H, cxR, cyR, rxR, ryR, hex, stops) {
+      const cx = W * cxR;
+      const cy = H * cyR;
+      const rx = W * rxR;
+      const ry = H * ryR;
+      const r  = Math.max(rx, ry);      // 원 반경 (scale 전)
+      const sx = rx / r;                // X 스케일
+      const sy = ry / r;                // Y 스케일
+
+      c.save();
+      c.translate(cx, cy);
+      c.scale(sx, sy);
+
+      const grad = c.createRadialGradient(0, 0, 0, 0, 0, r);
+      for (const { pos, alpha } of stops) {
+        grad.addColorStop(pos, _hexWithAlpha(hex, alpha));
+      }
+      c.fillStyle = grad;
+
+      // scale된 좌표계에서 캔버스 전체를 덮는 rect
+      c.fillRect(-cx / sx, -cy / sy, W / sx, H / sy);
+      c.restore();
+    }
+
     const glowCanvas = createCanvas(imgW, cardH);
     const gc         = glowCanvas.getContext('2d');
 
-    // 주색 — 상단 중앙에서 아래로 (웹 ::before 중앙 gradient 재현)
-    const R1 = cardH * 0.70;
-    const g1 = gc.createRadialGradient(
-      imgW * 0.50, 0, 0,
-      imgW * 0.50, 0, R1,
+    // ── 상단 글로우 — 웹 reply-card::before 재현 ──────────────────
+    // CSS: radial-gradient(ellipse 85% 70% at 50% 0%, primary→transparent 70%)
+    //      opacity: 1
+    fillEllipseGradient(gc, imgW, cardH,
+      0.50, 0,      // 중심: 상단 중앙
+      0.85, 0.70,   // CSS ellipse 85% 70%
+      primary,
+      [
+        { pos: 0.00, alpha: 1.00 },
+        { pos: 0.35, alpha: 0.55 },
+        { pos: 0.70, alpha: 0.10 },
+        { pos: 1.00, alpha: 0.00 },
+      ],
     );
-    // 웹 ::before: opacity:1, radial 0%→70% fade
-    // → 중심 alpha를 1.0으로 두고 퍼지면서 0으로 (웹과 동일한 시각적 강도)
-    g1.addColorStop(0.00, _hexWithAlpha(primary,   1.00));
-    g1.addColorStop(0.30, _hexWithAlpha(primary,   0.55));
-    g1.addColorStop(0.60, _hexWithAlpha(primary,   0.15));
-    g1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
-    gc.fillStyle = g1;
-    gc.fillRect(0, 0, imgW, cardH);
 
-    // 보조색 — 우측 상단
-    const R2 = cardH * 0.55;
-    const g2 = gc.createRadialGradient(
-      imgW * 0.82, 0, 0,
-      imgW * 0.82, 0, R2,
+    // CSS: radial-gradient(ellipse 55% 55% at 82% 0%, secondary→transparent 68%)
+    fillEllipseGradient(gc, imgW, cardH,
+      0.82, 0,      // 중심: 우측 상단
+      0.55, 0.55,   // CSS ellipse 55% 55%
+      secondary,
+      [
+        { pos: 0.00, alpha: 0.70 },
+        { pos: 0.40, alpha: 0.20 },
+        { pos: 1.00, alpha: 0.00 },
+      ],
     );
-    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.70));
-    g2.addColorStop(0.35, _hexWithAlpha(secondary, 0.25));
-    g2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
-    gc.fillStyle = g2;
-    gc.fillRect(0, 0, imgW, cardH);
 
-    // ── 방사형 빛 레이어: 웹 reply-card background 재현 ───────────
-    // 웹: radial-gradient(ellipse 62% 45% at 88% 8%,  rgba(primary, 0.18))
-    //     radial-gradient(ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12))
-    const radW = imgW;
-    const radH = cardH;
-
-    // 우상단 — 주색 (웹과 동일 비율)
-    const rr1 = Math.max(radW * 0.62, radH * 0.45);
-    const gr1 = gc.createRadialGradient(
-      radW * 0.88, radH * 0.08, 0,
-      radW * 0.88, radH * 0.08, rr1,
+    // ── 방사형 빛 — 웹 reply-card background 재현 ─────────────────
+    // CSS: radial-gradient(ellipse 62% 45% at 88% 8%,  rgba(primary,   0.18))
+    fillEllipseGradient(gc, imgW, cardH,
+      0.88, 0.08,   // 중심: 우상단
+      0.62, 0.45,   // CSS ellipse 62% 45%
+      primary,
+      [
+        { pos: 0.00, alpha: 0.55 },
+        { pos: 0.45, alpha: 0.15 },
+        { pos: 1.00, alpha: 0.00 },
+      ],
     );
-    gr1.addColorStop(0.00, _hexWithAlpha(primary,   0.55));
-    gr1.addColorStop(0.40, _hexWithAlpha(primary,   0.18));
-    gr1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
-    gc.fillStyle = gr1;
-    gc.fillRect(0, 0, imgW, cardH);
 
-    // 좌하단 — 보조색
-    const rr2 = Math.max(radW * 0.50, radH * 0.38);
-    const gr2 = gc.createRadialGradient(
-      radW * 0.12, radH * 0.92, 0,
-      radW * 0.12, radH * 0.92, rr2,
+    // CSS: radial-gradient(ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12))
+    fillEllipseGradient(gc, imgW, cardH,
+      0.12, 0.92,   // 중심: 좌하단
+      0.50, 0.38,   // CSS ellipse 50% 38%
+      secondary,
+      [
+        { pos: 0.00, alpha: 0.40 },
+        { pos: 0.50, alpha: 0.10 },
+        { pos: 1.00, alpha: 0.00 },
+      ],
     );
-    gr2.addColorStop(0.00, _hexWithAlpha(secondary, 0.40));
-    gr2.addColorStop(0.45, _hexWithAlpha(secondary, 0.12));
-    gr2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
-    gc.fillStyle = gr2;
-    gc.fillRect(0, 0, imgW, cardH);
 
     const glowBuf = glowCanvas.toBuffer('image/png');
-    // 카드 영역 위에만 합성 (SVG 이미지에 걸치지 않음)
     compositeInputs.push({
       input: glowBuf,
-      top:   imgH,   // 카드 시작점 = 이미지 하단
+      top:   imgH,
       left:  0,
     });
   }
