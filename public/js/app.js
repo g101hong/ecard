@@ -486,19 +486,20 @@ function applyGlowColors(scores) {
   const resultArea = document.querySelector('.screen--result');
   if (!glassFrame || !resultArea) return;
 
-  // ── 위치 계산: getBoundingClientRect 기준 ─────────────────────
-  // offsetTop 체인은 screen--result가 position:absolute 일 때
-  // 기준점이 app-frame이 아닌 뷰포트가 되어 오차가 생긴다.
-  // 대신 두 요소의 ClientRect 차이로 resultArea 내부 좌표를 구한다.
-  const frameRect  = glassFrame.getBoundingClientRect();
-  const areaRect   = resultArea.getBoundingClientRect();
-  const scrollTop  = resultArea.scrollTop;   // 스크롤 오프셋 보정
-
-  // glassFrame 하단이 resultArea 상단으로부터 얼마나 아래인지
-  const boundaryY  = (frameRect.bottom - areaRect.top) + scrollTop;
-
-  // 이미지 높이 기반 글로우 범위
+  // ── 위치 계산 ─────────────────────────────────────────────────
+  // DOM 구조:
+  //   screen--result (position:absolute) ← glow-layer의 절대위치 기준
+  //     └─ div.result (position:static, flex)
+  //         ├─ glass-frame (position:relative)
+  //         └─ reply-card
+  //
+  // glass-frame.offsetParent = screen--result (static인 .result 건너뜀)
+  // → glass-frame.offsetTop 이 이미 screen--result 기준의 거리
+  // → boundaryY = glass-frame.offsetTop + glass-frame.offsetHeight
+  // scrollTop 보정 불필요: glow-layer도 같은 스크롤 컨테이너 안에 있음
   const imgH      = glassFrame.offsetHeight;
+  const boundaryY = glassFrame.offsetTop + imgH;
+
   const glowAbove = Math.round(imgH * 0.18);  // 이미지 안으로
   const glowBelow = Math.round(imgH * 0.40);  // 카드 안으로
   const glowH     = glowAbove + glowBelow;
