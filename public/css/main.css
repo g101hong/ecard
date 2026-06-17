@@ -613,7 +613,19 @@ body {
   gap: 18px;
   padding: 28px 24px 24px;
   position: relative;
+  /* ── 방안4: 방사형 빛 번짐 + 아이보리 베이스 ──────────────────────
+   * --reply-main / --reply-sub : JS의 applyGlowColors() 또는
+   *   applyReplyRadial()에서 주입. 미주입 시 투명(fallback).
+   * 우상단(주색) + 좌하단(보조색) 에서 빛이 퍼지며
+   * 아이보리 베이스 위에 스테인드글라스 색이 스며드는 느낌을 만든다.
+   */
   background:
+    radial-gradient(ellipse 62% 45% at 88% 8%,
+      var(--reply-main, transparent) 0%,
+      transparent 68%),
+    radial-gradient(ellipse 50% 38% at 12% 92%,
+      var(--reply-sub,  transparent) 0%,
+      transparent 62%),
     linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
 }
 
@@ -640,36 +652,36 @@ body {
   pointer-events: none;
 }
 
-/* 주색1 — 중앙 방사형 */
+/* 주색1 — 중앙 방사형 (아이보리 배경: opacity 0.55→0.42) */
 .glow-layer::before {
   background: radial-gradient(
     ellipse 80% 60% at 50% 100%,
     var(--glow-primary)   0%,
     transparent           70%
   );
-  opacity: 0.55;
+  opacity: 0.42;
   animation: glowFadeIn 1.0s ease forwards;
 }
 
-/* 주색2 — 우측 보조 */
+/* 주색2 — 우측 보조 (아이보리 배경: opacity 0.40→0.30) */
 .glow-layer::after {
   background: radial-gradient(
     ellipse 55% 55% at 82% 100%,
     var(--glow-secondary) 0%,
     transparent           68%
   );
-  opacity: 0.40;
+  opacity: 0.30;
   animation: glowFadeInSimple 1.2s ease 0.15s forwards;
 }
 
 @keyframes glowFadeIn {
   from { opacity: 0; }
-  to   { opacity: 0.55; }
+  to   { opacity: 0.42; }
 }
 
 @keyframes glowFadeInSimple {
   from { opacity: 0; }
-  to   { opacity: 0.40; }
+  to   { opacity: 0.30; }
 }
 
 /* reply-card는 overflow: hidden 제거 — 글로우가 카드 밖으로 나가야 함 */
