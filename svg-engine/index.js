@@ -263,7 +263,8 @@ export async function generateCardPNG({
   const patchedSvg = await patchSVG(emotionScores, diversitySeed);
 
   // STEP 2: 패치된 SVG → PNG 파일 저장 (sharp)
-  const savedPath = await svgToPng(patchedSvg, outputPath, size, reply);
+  // emotionScores를 전달 → dominant 감성에 맞는 폰트로 답글 렌더
+  const savedPath = await svgToPng(patchedSvg, outputPath, size, reply, emotionScores);
 
   console.info(
     `[svg-engine] PNG 생성 완료 | ` +
