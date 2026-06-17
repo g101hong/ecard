@@ -307,7 +307,7 @@ export async function analyzeImpression(text, options = {}) {
 // ⑤ /api/card — 기존 JSON POST 유지
 // =============================================================================
 
-export async function requestCard(emotionScores, diversitySeed, reply = null, size = 1200) {
+export async function requestCard(emotionScores, reply = null, size = 1200) {
   if (!emotionScores || typeof emotionScores !== 'object') {
     throw new ApiError('감성 데이터가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
   }
@@ -323,9 +323,8 @@ export async function requestCard(emotionScores, diversitySeed, reply = null, si
       headers: { 'Content-Type': API_CONFIG.CONTENT_TYPE },
       body:    JSON.stringify({
         emotionScores,
-        diversitySeed: diversitySeed ?? 0,
-        reply:         reply ?? null,
-        size:          Math.min(Math.max(size, 400), 2400),
+        reply: reply ?? null,
+        size:  Math.min(Math.max(size, 400), 2400),
       }),
     });
   } catch (err) {

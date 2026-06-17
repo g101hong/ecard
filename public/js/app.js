@@ -43,14 +43,12 @@
 // ① 모듈 임포트
 // =============================================================================
 
-import { SPOTS }                          from './spots.js';
+import { SPOTS }           from './spots.js';
 import { loadSVG,
-         applyDeltaColorsToSVG,
          revealSVG,
-         resetSVG,
-         highlightPanel }                 from './svg-renderer.js';
+         resetSVG }        from './svg-renderer.js';
 import { analyzeImpression,
-         requestCard }                    from './api.js';
+         requestCard }     from './api.js';
 
 // =============================================================================
 // ② DOM 참조
@@ -68,7 +66,6 @@ const elCharCount      = $('char-count');
 const elSubmitBtn      = $('submit-btn');
 const elErrorMsg       = $('error-msg');
 const elLoading        = $('loading-overlay');
-const elPaletteStrip   = $('palette-strip');
 const elKeywordChips   = $('keyword-chips');
 const elPrimaryEmotion = $('primary-emotion');
 const elReplyMain      = $('reply-main');
@@ -198,42 +195,18 @@ async function onSubmit() {
       tripDuration: selectedDuration,
       companion:    selectedCompanion,
 
-      // ── Phase 1: colors 이벤트 수신 즉시 ──────────────────────
-      // Gemini 응답 완료 후 색상 데이터가 가장 먼저 온다.
-      // 이 시점에 SVG 색채 전환 + 블러 해제를 실행한다.
-      // 사용자는 답글을 기다리는 동안 색채 애니메이션을 본다.
+      // Phase 1: colors 이벤트 — emotionScores 저장 + SVG 블러 해제
       onColors: (colorsData) => {
-        // emotionScores를 임시 저장 — onReply에서 renderResultFromReply가 사용
+        // emotionScores 임시 저장 — onReply에서 스펙트럼/폰트에 사용
         window._ecardColorData = colorsData;
 
-        // SVG 색채 delta 적용 (현재 SVG 색상 기준)
-        const colorResult = applyDeltaColorsToSVG(
-          colorsData.emotionScores,
-          colorsData.diversitySeed ?? 0,
-        );
-
-        // 블러 해제 애니메이션
+        // SVG 원본 그대로 블러만 해제
         revealSVG();
 
-        // 색온도 CSS 필터 적용
-        if (colorsData.colorTempFilter) {
-          const svgContainer = document.getElementById('svg-container');
-          if (svgContainer) {
-            svgContainer.style.filter = colorsData.colorTempFilter;
-          }
-        }
-
-        // 팔레트 스트립
-        renderPaletteStrip(colorResult.panelColors);
-
-        // 로딩 스피너는 유지 (답글 카드는 아직 미수신)
-        // phase를 'colors'로 바꿔 중복 제출 방지
         setPhase('colors');
       },
 
-      // ── Phase 2: reply 이벤트 수신 즉시 ───────────────────────
-      // colors 이벤트 직후 수십ms 이내에 도달한다.
-      // 답글 카드 + 키워드 + 스펙트럼을 렌더하고 화면 2로 전환한다.
+      // Phase 2: reply 이벤트 — 답글 카드 렌더링 + 화면 전환
       onReply: (replyData) => {
         renderResultFromReply(replyData);
         setPhase('done');
@@ -269,7 +242,6 @@ function onReset() {
   selectedCompanion = null;
 
   resetSVG();
-  elPaletteStrip.classList.add('hidden');
 
   hideError();
   showScreen('input');
@@ -295,7 +267,7 @@ async function onSave() {
   elSaveBtn.disabled    = true;
   elSaveBtn.textContent = '저장 중...';
   try {
-    const data = await requestCard(lastResult.emotionScores, lastResult.diversitySeed ?? 0, lastResult.reply ?? null);
+    const data = await requestCard(lastResult.emotionScores, lastResult.reply ?? null);
     if (data.downloadUrl) {
       const a = document.createElement('a');
       a.href     = data.downloadUrl;
@@ -427,29 +399,7 @@ function renderResult(data) {
 }
 
 // =============================================================================
-// ⑬ 팔레트 스트립
-// =============================================================================
-
-function renderPaletteStrip(panelColors) {
-  if (!panelColors || panelColors.length === 0) return;
-  const hasColors = panelColors.some((p) => p.color !== null);
-  if (!hasColors) { elPaletteStrip.classList.add('hidden'); return; }
-
-  elPaletteStrip.innerHTML = '';
-  panelColors.forEach((panel) => {
-    if (!panel.color) return;
-    const chip = document.createElement('div');
-    chip.className        = 'palette-chip';
-    chip.title            = panel.name ?? SPOTS[panel.index]?.name ?? `패널 ${panel.index}`;
-    chip.style.background = panel.color;
-    chip.addEventListener('click', () => highlightPanel(panel.index));
-    elPaletteStrip.appendChild(chip);
-  });
-  elPaletteStrip.classList.remove('hidden');
-}
-
-// =============================================================================
-// ⑭ 키워드 칩
+// ⑬ 키워드 칩
 // =============================================================================
 
 function renderKeywordChips(keywords) {
