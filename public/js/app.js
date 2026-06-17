@@ -501,6 +501,29 @@ function applyGlowColors(scores) {
   `;
 
   resultArea.appendChild(layer);
+
+  // ── 방안4: reply-card 방사형 빛용 CSS 변수 주입 ─────────────────
+  // .reply-card의 background radial-gradient가 이 변수를 참조한다.
+  // 아이보리 배경 위에서 자연스럽게 보이도록 mid 색상의 낮은 불투명도 버전 사용.
+  const replyCard = document.querySelector('.reply-card');
+  if (replyCard) {
+    // mid 색상에 낮은 알파(0.18 / 0.12)를 적용 — 아이보리 배경 위 은은한 틴트
+    replyCard.style.setProperty('--reply-main', _hexToRgba(primary,   0.18));
+    replyCard.style.setProperty('--reply-sub',  _hexToRgba(secondary, 0.12));
+  }
+}
+
+/**
+ * hex 색상을 rgba() 문자열로 변환한다.
+ * @param {string} hex  '#RRGGBB'
+ * @param {number} alpha  0~1
+ * @returns {string}  'rgba(r,g,b,a)'
+ */
+function _hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 // =============================================================================
