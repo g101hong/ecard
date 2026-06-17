@@ -241,20 +241,30 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
     if (colorResult) {
       const { primary, secondary } = colorResult;
 
-      // 우상단 — 주색 방사형
-      const rTop = Math.round(W * 0.62);
-      const gTop = ctx.createRadialGradient(W * 0.88, 0, 0, W * 0.88, 0, rTop);
-      gTop.addColorStop(0.00, _hexWithAlpha(primary,   0.22));
-      gTop.addColorStop(0.45, _hexWithAlpha(primary,   0.08));
+      // ── 상단 글로우: 카드 상단 중앙에서 퍼지는 주색 (경계 글로우 연장)
+      const rTop = Math.round(W * 0.80);
+      const gTop = ctx.createRadialGradient(W * 0.50, 0, 0, W * 0.50, 0, rTop);
+      gTop.addColorStop(0.00, _hexWithAlpha(primary,   0.50));
+      gTop.addColorStop(0.30, _hexWithAlpha(primary,   0.22));
+      gTop.addColorStop(0.65, _hexWithAlpha(primary,   0.06));
       gTop.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
       ctx.fillStyle = gTop;
       ctx.fillRect(0, 0, W, H);
 
-      // 좌하단 — 보조색 방사형
-      const rBot = Math.round(W * 0.52);
+      // ── 우상단 보조: 보조색 방사형
+      const rSub = Math.round(W * 0.60);
+      const gSub = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, rSub);
+      gSub.addColorStop(0.00, _hexWithAlpha(secondary, 0.35));
+      gSub.addColorStop(0.40, _hexWithAlpha(secondary, 0.10));
+      gSub.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+      ctx.fillStyle = gSub;
+      ctx.fillRect(0, 0, W, H);
+
+      // ── 좌하단 장식: 보조색 방사형 (은은하게)
+      const rBot = Math.round(W * 0.45);
       const gBot = ctx.createRadialGradient(W * 0.12, H, 0, W * 0.12, H, rBot);
-      gBot.addColorStop(0.00, _hexWithAlpha(secondary, 0.15));
-      gBot.addColorStop(0.45, _hexWithAlpha(secondary, 0.05));
+      gBot.addColorStop(0.00, _hexWithAlpha(secondary, 0.20));
+      gBot.addColorStop(0.50, _hexWithAlpha(secondary, 0.06));
       gBot.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
       ctx.fillStyle = gBot;
       ctx.fillRect(0, 0, W, H);
