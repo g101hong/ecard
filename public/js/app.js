@@ -260,7 +260,17 @@ async function onSubmit() {
       // Phase 2: reply 이벤트 — 답글 카드 렌더링 + 화면 전환
       onReply: (replyData) => {
         renderResultFromReply(replyData);
-        setPhase('done');
+        setPhase('done');  // ← showScreen('result') 실행 → DOM 가시화
+        // 글로우는 DOM이 실제로 렌더된 뒤(rAF 2틱) 재계산해야
+        // glassFrame.offsetHeight가 올바른 값을 반환한다.
+        const scores = window._ecardColorData?.emotionScores;
+        if (scores) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              applyGlowColors(scores);
+            });
+          });
+        }
       },
     });
 
@@ -394,7 +404,8 @@ function renderResultFromReply(replyData) {
   if (scores) {
     renderSpectrumBars(scores);
     applyDominantFont(scores);
-    applyGlowColors(scores);
+    // applyGlowColors는 onReply 콜백에서 showScreen 이후 rAF으로 실행
+    // (화면이 hidden 상태일 때 offsetHeight=0 문제 방지)
   }
 
   // fade-up 애니메이션 재시작
