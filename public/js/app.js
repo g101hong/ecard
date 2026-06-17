@@ -50,6 +50,57 @@ import { loadSVG,
 import { analyzeImpression,
          requestCard }     from './api.js';
 
+// emotion-colors는 svg-engine 경로이므로 클라이언트에서는 인라인 구현
+// (빌드 도구 없으므로 서버 모듈을 직접 import 불가 — 동일 로직을 인라인 선언)
+const EMOTION_BASE_COLOR = {
+  amazement: { h: 42,  s: 0.90, l: 0.58 },
+  peace:     { h: 200, s: 0.45, l: 0.62 },
+  vitality:  { h: 22,  s: 0.85, l: 0.55 },
+  nostalgia: { h: 32,  s: 0.55, l: 0.48 },
+  freshness: { h: 192, s: 0.70, l: 0.52 },
+  grandeur:  { h: 225, s: 0.50, l: 0.38 },
+  warmth:    { h: 30,  s: 0.80, l: 0.60 },
+  mystery:   { h: 270, s: 0.55, l: 0.42 },
+};
+
+function _hsl(h, s, l) {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+      .toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function extractDominantColors(emotionScores) {
+  if (!emotionScores) return null;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const keys = Object.keys(EMOTION_BASE_COLOR);
+  const sorted = keys
+    .map((k) => ({ emotion: k, score: Number(emotionScores[k]) || 0 }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  if (sorted[0].score === 0) return null;
+  const colors = sorted.map(({ emotion, score }) => {
+    const base = EMOTION_BASE_COLOR[emotion];
+    const intensity = clamp(score / 100, 0, 1);
+    const s = clamp(base.s * (0.75 + intensity * 0.25), 0.25, 1.0);
+    return {
+      emotion, score,
+      dark:  _hsl(base.h, s * 0.70, clamp(base.l * 0.35, 0.10, 0.28)),
+      mid:   _hsl(base.h, s,        clamp(base.l * 0.80, 0.30, 0.65)),
+      light: _hsl(base.h, s * 0.60, clamp(base.l * 1.30, 0.65, 0.88)),
+    };
+  });
+  return {
+    colors,
+    primary:   colors[0].mid,
+    secondary: colors[1]?.mid ?? colors[0].mid,
+    tertiary:  colors[2]?.mid ?? colors[0].mid,
+  };
+}
+
 // =============================================================================
 // ② DOM 참조
 // =============================================================================
@@ -243,6 +294,15 @@ function onReset() {
 
   resetSVG();
 
+  // 글로우 초기화
+  const card = document.querySelector('.reply-card');
+  if (card) {
+    card.classList.remove('has-glow');
+    card.style.removeProperty('--glow-primary');
+    card.style.removeProperty('--glow-secondary');
+    card.style.removeProperty('--glow-tertiary');
+  }
+
   hideError();
   showScreen('input');
   setPhase('idle');
@@ -340,6 +400,7 @@ function renderResultFromReply(replyData) {
   if (scores) {
     renderSpectrumBars(scores);
     applyDominantFont(scores);
+    applyGlowColors(scores);
   }
 
   // fade-up 애니메이션 재시작
@@ -396,6 +457,30 @@ function renderResult(data) {
     void el.offsetHeight;
     el.style.animation = '';
   });
+}
+
+// =============================================================================
+// applyGlowColors — 주색 CSS 변수 적용 (방안 2: 상단 글로우)
+// =============================================================================
+
+/**
+ * 감성 점수에서 주색을 추출하여 답글 카드 상단 글로우에 적용한다.
+ * .reply-card에 CSS 변수 --glow-primary/secondary/tertiary 를 설정하고
+ * has-glow 클래스를 추가하면 main.css의 ::before 글로우가 활성화된다.
+ * @param {Object} scores
+ */
+function applyGlowColors(scores) {
+  const result = extractDominantColors(scores);
+  if (!result) return;
+
+  const { primary, secondary, tertiary } = result;
+  const card = document.querySelector('.reply-card');
+  if (!card) return;
+
+  card.style.setProperty('--glow-primary',   primary);
+  card.style.setProperty('--glow-secondary', secondary);
+  card.style.setProperty('--glow-tertiary',  tertiary);
+  card.classList.add('has-glow');
 }
 
 // =============================================================================
