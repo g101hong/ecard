@@ -84,22 +84,22 @@
 /* ============================================================= */
 
 :root {
-  /* 색채 토큰 */
-  --ink:      #14110F;
-  --ink-2:    #1F1A16;
-  --ink-3:    #2A231D;
-  --line:     #3A332C;
-  --paper:    #F4ECE0;
-  --paper-2:  #E8DCC8;
+  /* ── 라이트 테마 색채 토큰 (#FFF8F0 아이보리 베이스) ── */
+  --ink:      #FFF8F0;   /* 최외곽 배경 — 아이보리 */
+  --ink-2:    #FDF2E8;   /* 카드/패널 배경 */
+  --ink-3:    #F5E8D6;   /* 입력칸/칩 배경 */
+  --line:     #DDD0BE;   /* 경계선 */
+  --paper:    #1A1410;   /* 반전: 다크 텍스트 */
+  --paper-2:  #3A2E24;   /* 반전 보조 */
 
-  --ember:    #FF6635;
-  --amber:    #FFB347;
-  --teal:     #1B7FB0;
-  --pine:     #2A6640;
+  --ember:    #D94F20;   /* 주황 액센트 (라이트에서 채도 약간 낮춤) */
+  --amber:    #C88C1A;   /* 호박 액센트 */
+  --teal:     #1A6E9C;
+  --pine:     #265C38;
 
-  --text-hi:  #F4ECE0;
-  --text-lo:  #A89B8C;
-  --text-faint: #6E635A;
+  --text-hi:    #1A1410;   /* 주 텍스트 — 거의 검정 */
+  --text-lo:    #6B5A4A;   /* 보조 텍스트 */
+  --text-faint: #A0887A;   /* 희미한 텍스트 */
 
   /* 타이포 */
   --font-display: 'Black Han Sans', 'Noto Sans KR', sans-serif;
@@ -111,9 +111,9 @@
   --radius-md: 16px;
   --radius-lg: 28px;
 
-  /* 음영 */
-  --shadow-glow: 0 0 60px -10px rgba(255, 102, 53, 0.35);
-  --shadow-card: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  /* 음영 — 라이트에서는 연하게 */
+  --shadow-glow: 0 0 60px -10px rgba(217, 79, 32, 0.22);
+  --shadow-card: 0 8px 32px -10px rgba(100, 70, 40, 0.18);
 
   /* 레이아웃 */
   --frame-max: 480px;
@@ -574,7 +574,7 @@ body {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 90% 70% at 50% 40%, transparent 55%, rgba(20, 17, 15, 0.55) 100%);
+    radial-gradient(ellipse 90% 70% at 50% 40%, transparent 55%, rgba(255, 248, 240, 0.40) 100%);
 }
 
 /* 팔레트 스트립 — 이미지 하단, 경승지 라벨과 같은 레이어 */
@@ -636,12 +636,13 @@ body {
   top: -60px;
   left: 50%;
   transform: translateX(-50%);
-  width: 110%;
-  height: 220px;
+  width: 130%;
+  height: 280px;
   background: radial-gradient(
-    ellipse 70% 100% at 50% 0%,
-    color-mix(in srgb, var(--glow-primary) 38%, transparent),
-    transparent 70%
+    ellipse 75% 100% at 50% 0%,
+    color-mix(in srgb, var(--glow-primary) 55%, transparent),
+    color-mix(in srgb, var(--glow-primary) 22%, transparent) 40%,
+    transparent 72%
   );
   opacity: 1;
   animation: glowFadeIn 1.0s ease forwards;
@@ -649,16 +650,17 @@ body {
 
 .reply-card.has-glow::after {
   top: -40px;
-  right: -20%;
-  width: 70%;
-  height: 180px;
+  right: -10%;
+  width: 80%;
+  height: 220px;
   background: radial-gradient(
     ellipse 80% 80% at 80% 0%,
-    color-mix(in srgb, var(--glow-secondary) 22%, transparent),
-    transparent 70%
+    color-mix(in srgb, var(--glow-secondary) 38%, transparent),
+    color-mix(in srgb, var(--glow-secondary) 14%, transparent) 45%,
+    transparent 72%
   );
   opacity: 1;
-  animation: glowFadeIn 1.2s ease 0.2s forwards;
+  animation: glowFadeInSimple 1.2s ease 0.2s forwards;
 }
 
 @keyframes glowFadeIn {
@@ -854,7 +856,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background: rgba(20, 17, 15, 0.82);
+  background: rgba(255, 248, 240, 0.88);
   backdrop-filter: blur(4px);
   text-align: center;
   padding: 24px;
