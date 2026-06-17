@@ -313,10 +313,11 @@ export async function svgToPng(
 
   // STEP 4: 이미지 + 카드 + 경계 글로우 합성 → 저장
   //
-  // 글로우는 이미지 하단에서 카드 상단으로 번지는 별도 레이어다.
-  // CSS의 .reply-card::before (top:-60px) 와 동일한 효과를 구현한다:
-  //   - 글로우 캔버스 높이: GLOW_H (이미지 하단 0 ~ 카드 상단 GLOW_H 범위)
-  //   - top: imgH - GLOW_OFFSET (이미지 안쪽으로 약간 올라감)
+  // 글로우 레이어 설계:
+  //   - 캔버스 높이: imgH × 0.20 (위) + cardH × 0.45 (아래)
+  //     → 경계선(y = GLOW_ABOVE)을 중심으로 이미지 쪽과 카드 쪽으로 퍼짐
+  //   - radialGradient 중심: (x, GLOW_ABOVE) = 경계선 위치
+  //   - top: imgH - GLOW_ABOVE (이미지 안쪽에서 시작)
 
   const compositeInputs = [
     { input: imgBuf,  top: 0,    left: 0 },
@@ -326,42 +327,59 @@ export async function svgToPng(
   const colorResult = extractDominantColors(emotionScores);
   if (colorResult) {
     const { primary, secondary, tertiary } = colorResult;
-    const GLOW_OFFSET = Math.round(imgH * 0.04);   // 이미지 안쪽으로 4% 올라감
-    const GLOW_H      = Math.round(imgH * 0.25);   // 글로우 높이: 이미지의 25%
+
+    // 경계선 위쪽 여유 (이미지 안으로 파고드는 깊이)
+    const GLOW_ABOVE = Math.round(imgH  * 0.18);
+    // 경계선 아래쪽 여유 (카드 안으로 번지는 깊이)
+    const GLOW_BELOW = Math.round(cardH * 0.40);
+    const GLOW_H     = GLOW_ABOVE + GLOW_BELOW;
+    // 글로우 반경: 경계선에서 위아래로 충분히 넓게
+    const R1 = GLOW_H * 0.75;
+    const R2 = GLOW_H * 0.60;
+    const R3 = GLOW_H * 0.50;
 
     const glowCanvas = createCanvas(imgW, GLOW_H);
     const gc         = glowCanvas.getContext('2d');
 
-    // 주색1 — 중앙: 경계선에서 위(이미지 쪽)와 아래(카드 쪽) 양방향 발광
-    // radialGradient 중심을 GLOW_H (하단)에 두어 위로 퍼지게 함
-    const g1 = gc.createRadialGradient(imgW / 2, GLOW_H, 0, imgW / 2, GLOW_H, GLOW_H * 1.0);
-    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.70));
-    g1.addColorStop(0.30, _hexWithAlpha(primary,   0.35));
-    g1.addColorStop(0.65, _hexWithAlpha(primary,   0.10));
+    // 주색1 — 중앙: 경계선(y=GLOW_ABOVE) 기준 방사형 발광
+    const g1 = gc.createRadialGradient(
+      imgW / 2, GLOW_ABOVE, 0,
+      imgW / 2, GLOW_ABOVE, R1,
+    );
+    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.75));
+    g1.addColorStop(0.28, _hexWithAlpha(primary,   0.40));
+    g1.addColorStop(0.60, _hexWithAlpha(primary,   0.12));
     g1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
     gc.fillStyle = g1;
     gc.fillRect(0, 0, imgW, GLOW_H);
 
-    // 주색2 — 우측에서 보조 발광
-    const g2 = gc.createRadialGradient(imgW * 0.82, GLOW_H, 0, imgW * 0.82, GLOW_H, GLOW_H * 0.80);
-    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.50));
-    g2.addColorStop(0.45, _hexWithAlpha(secondary, 0.14));
+    // 주색2 — 우측 경계선 기준 보조 발광
+    const g2 = gc.createRadialGradient(
+      imgW * 0.82, GLOW_ABOVE, 0,
+      imgW * 0.82, GLOW_ABOVE, R2,
+    );
+    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.55));
+    g2.addColorStop(0.40, _hexWithAlpha(secondary, 0.18));
     g2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
     gc.fillStyle = g2;
     gc.fillRect(imgW * 0.35, 0, imgW * 0.65, GLOW_H);
 
-    // 주색3 — 좌측 보조 발광
-    const g3 = gc.createRadialGradient(imgW * 0.18, GLOW_H, 0, imgW * 0.18, GLOW_H, GLOW_H * 0.65);
-    g3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.35));
-    g3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.08));
+    // 주색3 — 좌측 경계선 기준 보조 발광
+    const g3 = gc.createRadialGradient(
+      imgW * 0.18, GLOW_ABOVE, 0,
+      imgW * 0.18, GLOW_ABOVE, R3,
+    );
+    g3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.38));
+    g3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.10));
     g3.addColorStop(1.00, _hexWithAlpha(tertiary,  0.00));
     gc.fillStyle = g3;
-    gc.fillRect(0, 0, imgW * 0.50, GLOW_H);
+    gc.fillRect(0, 0, imgW * 0.55, GLOW_H);
 
     const glowBuf = glowCanvas.toBuffer('image/png');
+    // top = 이미지 하단에서 GLOW_ABOVE 만큼 위로 올라간 위치
     compositeInputs.push({
       input: glowBuf,
-      top:   imgH - GLOW_OFFSET,   // 이미지 안쪽에서 시작 → 카드 위까지 걸침
+      top:   imgH - GLOW_ABOVE,
       left:  0,
     });
   }
