@@ -479,30 +479,24 @@ function applyGlowColors(scores) {
 
   const { primary, secondary } = result;
 
-  const glassFrame = document.querySelector('.glass-frame');
-  if (!glassFrame) return;
-
-  // ── 좌표 계산 완전 제거 ───────────────────────────────────────
-  // glass-frame::before 를 글로우로 사용.
-  // CSS bottom:-35% / height:55% 가 위치를 결정하므로
-  // JS는 CSS 변수 주입 + 클래스 토글만 담당한다.
-  glassFrame.style.setProperty('--glow-primary',   primary);
-  glassFrame.style.setProperty('--glow-secondary', secondary);
-
-  // 애니메이션 재시작: 클래스 제거 → reflow → 재추가
-  glassFrame.classList.remove('glow-active');
-  void glassFrame.offsetWidth;
-  glassFrame.classList.add('glow-active');
-
-  // 기존 .glow-layer 제거 (이전 방식 잔재 정리)
-  document.querySelectorAll('.glow-layer').forEach(el => el.remove());
-
-  // ── reply-card 방사형 빛 CSS 변수 주입 ────────────────────────
   const replyCard = document.querySelector('.reply-card');
-  if (replyCard) {
-    replyCard.style.setProperty('--reply-main', _hexToRgba(primary,   0.18));
-    replyCard.style.setProperty('--reply-sub',  _hexToRgba(secondary, 0.12));
-  }
+  if (!replyCard) return;
+
+  // ── reply-card에 모든 색상 변수 주입 ─────────────────────────
+  // ::before 상단 글로우 (방안2)
+  replyCard.style.setProperty('--glow-primary',   primary);
+  replyCard.style.setProperty('--glow-secondary', secondary);
+  // 방사형 빛 (방안4)
+  replyCard.style.setProperty('--reply-main', _hexToRgba(primary,   0.18));
+  replyCard.style.setProperty('--reply-sub',  _hexToRgba(secondary, 0.12));
+
+  // 글로우 애니메이션 재시작
+  replyCard.classList.remove('glow-active');
+  void replyCard.offsetWidth;
+  replyCard.classList.add('glow-active');
+
+  // 기존 .glow-layer 제거 (잔재 정리)
+  document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 }
 
 /**
