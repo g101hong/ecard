@@ -479,48 +479,27 @@ function applyGlowColors(scores) {
 
   const { primary, secondary } = result;
 
-  // 기존 글로우 레이어 제거
+  const glassFrame = document.querySelector('.glass-frame');
+  if (!glassFrame) return;
+
+  // ── 좌표 계산 완전 제거 ───────────────────────────────────────
+  // glass-frame::before 를 글로우로 사용.
+  // CSS bottom:-35% / height:55% 가 위치를 결정하므로
+  // JS는 CSS 변수 주입 + 클래스 토글만 담당한다.
+  glassFrame.style.setProperty('--glow-primary',   primary);
+  glassFrame.style.setProperty('--glow-secondary', secondary);
+
+  // 애니메이션 재시작: 클래스 제거 → reflow → 재추가
+  glassFrame.classList.remove('glow-active');
+  void glassFrame.offsetWidth;
+  glassFrame.classList.add('glow-active');
+
+  // 기존 .glow-layer 제거 (이전 방식 잔재 정리)
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 
-  const glassFrame = document.querySelector('.glass-frame');
-  const resultArea = document.querySelector('.screen--result');
-  if (!glassFrame || !resultArea) return;
-
-  // ── 위치 계산 ─────────────────────────────────────────────────
-  // DOM 구조:
-  //   screen--result (position:absolute) ← glow-layer의 절대위치 기준
-  //     └─ div.result (position:static, flex)
-  //         ├─ glass-frame (position:relative)
-  //         └─ reply-card
-  //
-  // glass-frame.offsetParent = screen--result (static인 .result 건너뜀)
-  // → glass-frame.offsetTop 이 이미 screen--result 기준의 거리
-  // → boundaryY = glass-frame.offsetTop + glass-frame.offsetHeight
-  // scrollTop 보정 불필요: glow-layer도 같은 스크롤 컨테이너 안에 있음
-  const imgH      = glassFrame.offsetHeight;
-  const boundaryY = glassFrame.offsetTop + imgH;
-
-  const glowAbove = Math.round(imgH * 0.18);  // 이미지 안으로
-  const glowBelow = Math.round(imgH * 0.40);  // 카드 안으로
-  const glowH     = glowAbove + glowBelow;
-
-  const layer = document.createElement('div');
-  layer.className = 'glow-layer';
-  layer.style.cssText = `
-    top: ${boundaryY - glowAbove}px;
-    height: ${glowH}px;
-    --glow-primary: ${primary};
-    --glow-secondary: ${secondary};
-  `;
-
-  resultArea.appendChild(layer);
-
-  // ── 방안4: reply-card 방사형 빛용 CSS 변수 주입 ─────────────────
-  // .reply-card의 background radial-gradient가 이 변수를 참조한다.
-  // 아이보리 배경 위에서 자연스럽게 보이도록 mid 색상의 낮은 불투명도 버전 사용.
+  // ── reply-card 방사형 빛 CSS 변수 주입 ────────────────────────
   const replyCard = document.querySelector('.reply-card');
   if (replyCard) {
-    // mid 색상에 낮은 알파(0.18 / 0.12)를 적용 — 아이보리 배경 위 은은한 틴트
     replyCard.style.setProperty('--reply-main', _hexToRgba(primary,   0.18));
     replyCard.style.setProperty('--reply-sub',  _hexToRgba(secondary, 0.12));
   }
