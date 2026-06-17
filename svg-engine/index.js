@@ -252,19 +252,19 @@ export { svgToPng };
  */
 export async function generateCardPNG({
   emotionScores,
-  diversitySeed,
   outputPath,
   size = 1200,
   reply = null,
 }) {
   const t0 = Date.now();
 
-  // STEP 1: 감성 점수 → SVG DOM 패치 (jsdom, spot-XX-N 자동 탐색)
-  const patchedSvg = await patchSVG(emotionScores, diversitySeed);
+  // 원본 SVG를 그대로 읽어 PNG로 변환 (색채 패치 없음)
+  const { readFile } = await import('fs/promises');
+  const svgPath      = new URL('../assets/stained-glass.svg', import.meta.url);
+  const originalSvg  = await readFile(svgPath, 'utf-8');
 
-  // STEP 2: 패치된 SVG → PNG 파일 저장 (sharp)
-  // emotionScores를 전달 → dominant 감성에 맞는 폰트로 답글 렌더
-  const savedPath = await svgToPng(patchedSvg, outputPath, size, reply, emotionScores);
+  // SVG → PNG + 답글 카드 합성 (dominant 감성에 맞는 폰트 적용)
+  const savedPath = await svgToPng(originalSvg, outputPath, size, reply, emotionScores);
 
   console.info(
     `[svg-engine] PNG 생성 완료 | ` +
