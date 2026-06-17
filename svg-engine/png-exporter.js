@@ -232,45 +232,6 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
 
-  // ── 배경 2: 방사형 빛 번짐 (방안4) ─────────────────────────────
-  // 우상단(주색)과 좌하단(보조색)에서 빛이 퍼지는 스테인드글라스 효과.
-  // 경계 글로우(svgToPng 합성단계)가 위에서 내려오고,
-  // 카드 내부에서도 빛이 번지므로 자연스럽게 이어진다.
-  if (emotionScores) {
-    const colorResult = extractDominantColors(emotionScores);
-    if (colorResult) {
-      const { primary, secondary } = colorResult;
-
-      // ── 상단 글로우: 카드 상단 중앙에서 퍼지는 주색 (경계 글로우 연장)
-      const rTop = Math.round(W * 0.80);
-      const gTop = ctx.createRadialGradient(W * 0.50, 0, 0, W * 0.50, 0, rTop);
-      gTop.addColorStop(0.00, _hexWithAlpha(primary,   0.50));
-      gTop.addColorStop(0.30, _hexWithAlpha(primary,   0.22));
-      gTop.addColorStop(0.65, _hexWithAlpha(primary,   0.06));
-      gTop.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
-      ctx.fillStyle = gTop;
-      ctx.fillRect(0, 0, W, H);
-
-      // ── 우상단 보조: 보조색 방사형
-      const rSub = Math.round(W * 0.60);
-      const gSub = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, rSub);
-      gSub.addColorStop(0.00, _hexWithAlpha(secondary, 0.35));
-      gSub.addColorStop(0.40, _hexWithAlpha(secondary, 0.10));
-      gSub.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
-      ctx.fillStyle = gSub;
-      ctx.fillRect(0, 0, W, H);
-
-      // ── 좌하단 장식: 보조색 방사형 (은은하게)
-      const rBot = Math.round(W * 0.45);
-      const gBot = ctx.createRadialGradient(W * 0.12, H, 0, W * 0.12, H, rBot);
-      gBot.addColorStop(0.00, _hexWithAlpha(secondary, 0.20));
-      gBot.addColorStop(0.50, _hexWithAlpha(secondary, 0.06));
-      gBot.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
-      ctx.fillStyle = gBot;
-      ctx.fillRect(0, 0, W, H);
-    }
-  }
-
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
   ctx.globalAlpha = 0.6;
@@ -350,13 +311,21 @@ export async function svgToPng(
   // dominant 감성에 맞는 폰트로 렌더링됨.
   const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
 
-  // STEP 4: 이미지 + 카드 + 경계 글로우 합성 → 저장
+  // STEP 4: 이미지 + 카드 합성 → 저장
   //
-  // 글로우 레이어 설계:
-  //   - 캔버스 높이: imgH × 0.20 (위) + cardH × 0.45 (아래)
-  //     → 경계선(y = GLOW_ABOVE)을 중심으로 이미지 쪽과 카드 쪽으로 퍼짐
-  //   - radialGradient 중심: (x, GLOW_ABOVE) = 경계선 위치
-  //   - top: imgH - GLOW_ABOVE (이미지 안쪽에서 시작)
+  // 웹화면(reply-card CSS)과 동일한 구조로 재현:
+  //   ┌─────────────────────────────┐
+  //   │  SVG 스테인드글라스 이미지   │ ← imgBuf (색채 변환 없음)
+  //   ├─────────────────────────────┤ ← 경계선
+  //   │::before 상단 글로우          │   reply-card::before 와 동일
+  //   │  ellipse 85%×70% at 50% 0%  │   alpha: primary×0.42, secondary×0.30
+  //   │                             │
+  //   │  방사형 빛 (방안4)           │   reply-card background 와 동일
+  //   │  우상단 ellipse 62%×45%     │   alpha: primary×0.18
+  //   │  좌하단 ellipse 50%×38%     │   alpha: secondary×0.12
+  //   │                             │
+  //   │  텍스트 (main/place/tagline) │
+  //   └─────────────────────────────┘
 
   const compositeInputs = [
     { input: imgBuf,  top: 0,    left: 0 },
@@ -365,60 +334,74 @@ export async function svgToPng(
 
   const colorResult = extractDominantColors(emotionScores);
   if (colorResult) {
-    const { primary, secondary, tertiary } = colorResult;
+    const { primary, secondary } = colorResult;
 
-    // 경계선 위쪽 여유 (이미지 안으로 파고드는 깊이)
-    const GLOW_ABOVE = Math.round(imgH  * 0.18);
-    // 경계선 아래쪽 여유 (카드 안으로 번지는 깊이)
-    const GLOW_BELOW = Math.round(cardH * 0.40);
-    const GLOW_H     = GLOW_ABOVE + GLOW_BELOW;
-    // 글로우 반경: 경계선에서 위아래로 충분히 넓게
-    const R1 = GLOW_H * 0.75;
-    const R2 = GLOW_H * 0.60;
-    const R3 = GLOW_H * 0.50;
-
-    const glowCanvas = createCanvas(imgW, GLOW_H);
+    // ── 글로우 레이어: 카드 영역만 (SVG 이미지에 걸치지 않음) ──────
+    // 웹 reply-card::before: ellipse 85% 70% at 50% 0%, opacity 0.42
+    //                        ellipse 55% 55% at 82% 0%, opacity 0.30
+    const glowCanvas = createCanvas(imgW, cardH);
     const gc         = glowCanvas.getContext('2d');
 
-    // 주색1 — 중앙: 경계선(y=GLOW_ABOVE) 기준 방사형 발광
+    // 주색 — 상단 중앙에서 아래로 (웹 ::before 중앙 gradient 재현)
+    const R1 = cardH * 0.70;
     const g1 = gc.createRadialGradient(
-      imgW / 2, GLOW_ABOVE, 0,
-      imgW / 2, GLOW_ABOVE, R1,
+      imgW * 0.50, 0, 0,
+      imgW * 0.50, 0, R1,
     );
-    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.75));
-    g1.addColorStop(0.28, _hexWithAlpha(primary,   0.40));
-    g1.addColorStop(0.60, _hexWithAlpha(primary,   0.12));
+    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.42));  // 웹 opacity 0.42
+    g1.addColorStop(0.35, _hexWithAlpha(primary,   0.18));
+    g1.addColorStop(0.70, _hexWithAlpha(primary,   0.05));
     g1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
     gc.fillStyle = g1;
-    gc.fillRect(0, 0, imgW, GLOW_H);
+    gc.fillRect(0, 0, imgW, cardH);
 
-    // 주색2 — 우측 경계선 기준 보조 발광
+    // 보조색 — 우측 상단 (웹 ::before 우측 gradient 재현)
+    const R2 = cardH * 0.55;
     const g2 = gc.createRadialGradient(
-      imgW * 0.82, GLOW_ABOVE, 0,
-      imgW * 0.82, GLOW_ABOVE, R2,
+      imgW * 0.82, 0, 0,
+      imgW * 0.82, 0, R2,
     );
-    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.55));
-    g2.addColorStop(0.40, _hexWithAlpha(secondary, 0.18));
+    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.30));  // 웹 opacity 0.30
+    g2.addColorStop(0.40, _hexWithAlpha(secondary, 0.10));
     g2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
     gc.fillStyle = g2;
-    gc.fillRect(imgW * 0.35, 0, imgW * 0.65, GLOW_H);
+    gc.fillRect(0, 0, imgW, cardH);
 
-    // 주색3 — 좌측 경계선 기준 보조 발광
-    const g3 = gc.createRadialGradient(
-      imgW * 0.18, GLOW_ABOVE, 0,
-      imgW * 0.18, GLOW_ABOVE, R3,
+    // ── 방사형 빛 레이어: 웹 reply-card background 재현 ───────────
+    // 웹: radial-gradient(ellipse 62% 45% at 88% 8%,  rgba(primary, 0.18))
+    //     radial-gradient(ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12))
+    const radW = imgW;
+    const radH = cardH;
+
+    // 우상단 — 주색 (웹과 동일 비율)
+    const rr1 = Math.max(radW * 0.62, radH * 0.45);
+    const gr1 = gc.createRadialGradient(
+      radW * 0.88, radH * 0.08, 0,
+      radW * 0.88, radH * 0.08, rr1,
     );
-    g3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.38));
-    g3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.10));
-    g3.addColorStop(1.00, _hexWithAlpha(tertiary,  0.00));
-    gc.fillStyle = g3;
-    gc.fillRect(0, 0, imgW * 0.55, GLOW_H);
+    gr1.addColorStop(0.00, _hexWithAlpha(primary,   0.18));
+    gr1.addColorStop(0.50, _hexWithAlpha(primary,   0.06));
+    gr1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
+    gc.fillStyle = gr1;
+    gc.fillRect(0, 0, imgW, cardH);
+
+    // 좌하단 — 보조색 (웹과 동일 비율)
+    const rr2 = Math.max(radW * 0.50, radH * 0.38);
+    const gr2 = gc.createRadialGradient(
+      radW * 0.12, radH * 0.92, 0,
+      radW * 0.12, radH * 0.92, rr2,
+    );
+    gr2.addColorStop(0.00, _hexWithAlpha(secondary, 0.12));
+    gr2.addColorStop(0.50, _hexWithAlpha(secondary, 0.04));
+    gr2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+    gc.fillStyle = gr2;
+    gc.fillRect(0, 0, imgW, cardH);
 
     const glowBuf = glowCanvas.toBuffer('image/png');
-    // top = 이미지 하단에서 GLOW_ABOVE 만큼 위로 올라간 위치
+    // 카드 영역 위에만 합성 (SVG 이미지에 걸치지 않음)
     compositeInputs.push({
       input: glowBuf,
-      top:   imgH - GLOW_ABOVE,
+      top:   imgH,   // 카드 시작점 = 이미지 하단
       left:  0,
     });
   }
