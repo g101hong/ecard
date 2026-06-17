@@ -28,6 +28,7 @@ import { fileURLToPath }            from 'url';
 import { EMOTION_FONT_MAP,
          FALLBACK_FONT,
          pickFontByEmotion }        from './emotion-fonts.js';
+import { extractDominantColors }    from './emotion-colors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.resolve(__dirname, '../assets');
@@ -100,6 +101,15 @@ function parseSvgRatio(svgString) {
   if (!m) return 1.0;
   const p = m[1].trim().split(/[\s,]+/).map(Number);
   return (p.length >= 4 && p[2] > 0 && p[3] > 0) ? p[3] / p[2] : 1.0;
+}
+
+/** hex + alpha → rgba 문자열 (canvas fillStyle 용) */
+function _hexWithAlpha(hex, alpha) {
+  if (!hex || hex.length < 7) return `rgba(200,168,75,${alpha})`;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 // ── 텍스트 줄바꿈 유틸 ────────────────────────────────────────
@@ -218,9 +228,31 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // 배경
+  // 기본 배경
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
+
+  // ── 방안 2: 상단 글로우 (canvas radialGradient) ───────────────
+  const colorResult = extractDominantColors(emotionScores);
+  if (colorResult) {
+    const { primary, secondary } = colorResult;
+
+    // 주색1 — 중앙 상단 타원형 발광
+    const grd1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, H * 0.55);
+    grd1.addColorStop(0.00, _hexWithAlpha(primary,   0.40));
+    grd1.addColorStop(0.45, _hexWithAlpha(primary,   0.12));
+    grd1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
+    ctx.fillStyle = grd1;
+    ctx.fillRect(0, 0, W, H * 0.65);
+
+    // 주색2 — 우상단 보조 발광
+    const grd2 = ctx.createRadialGradient(W * 0.80, 0, 0, W * 0.80, 0, H * 0.40);
+    grd2.addColorStop(0.00, _hexWithAlpha(secondary, 0.25));
+    grd2.addColorStop(0.55, _hexWithAlpha(secondary, 0.06));
+    grd2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+    ctx.fillStyle = grd2;
+    ctx.fillRect(W * 0.40, 0, W * 0.60, H * 0.50);
+  }
 
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
