@@ -232,31 +232,6 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
 
-  // ── 배경 2: 방사형 빛 (텍스트 아래 직접 그림 — 별도 레이어 불필요) ──
-  // 웹 reply-card background와 동일한 위치/비율/alpha
-  if (emotionScores) {
-    const _cr = extractDominantColors(emotionScores);
-    if (_cr) {
-      // 우상단 — 주색  (웹: ellipse 62% 45% at 88% 8%, rgba 0.18)
-      const _rr1 = Math.max(W * 0.62, H * 0.45);
-      const _gr1 = ctx.createRadialGradient(W * 0.88, H * 0.08, 0, W * 0.88, H * 0.08, _rr1);
-      _gr1.addColorStop(0.00, _hexWithAlpha(_cr.primary,   0.32));
-      _gr1.addColorStop(0.45, _hexWithAlpha(_cr.primary,   0.10));
-      _gr1.addColorStop(1.00, _hexWithAlpha(_cr.primary,   0.00));
-      ctx.fillStyle = _gr1;
-      ctx.fillRect(0, 0, W, H);
-
-      // 좌하단 — 보조색  (웹: ellipse 50% 38% at 12% 92%, rgba 0.12)
-      const _rr2 = Math.max(W * 0.50, H * 0.38);
-      const _gr2 = ctx.createRadialGradient(W * 0.12, H * 0.92, 0, W * 0.12, H * 0.92, _rr2);
-      _gr2.addColorStop(0.00, _hexWithAlpha(_cr.secondary, 0.22));
-      _gr2.addColorStop(0.50, _hexWithAlpha(_cr.secondary, 0.06));
-      _gr2.addColorStop(1.00, _hexWithAlpha(_cr.secondary, 0.00));
-      ctx.fillStyle = _gr2;
-      ctx.fillRect(0, 0, W, H);
-    }
-  }
-
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
   ctx.globalAlpha = 0.6;
@@ -373,23 +348,55 @@ export async function svgToPng(
       imgW * 0.50, 0, 0,
       imgW * 0.50, 0, R1,
     );
-    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.42));  // 웹 opacity 0.42
-    g1.addColorStop(0.35, _hexWithAlpha(primary,   0.18));
-    g1.addColorStop(0.70, _hexWithAlpha(primary,   0.05));
+    // 웹 ::before: opacity:1, radial 0%→70% fade
+    // → 중심 alpha를 1.0으로 두고 퍼지면서 0으로 (웹과 동일한 시각적 강도)
+    g1.addColorStop(0.00, _hexWithAlpha(primary,   1.00));
+    g1.addColorStop(0.30, _hexWithAlpha(primary,   0.55));
+    g1.addColorStop(0.60, _hexWithAlpha(primary,   0.15));
     g1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
     gc.fillStyle = g1;
     gc.fillRect(0, 0, imgW, cardH);
 
-    // 보조색 — 우측 상단 (웹 ::before 우측 gradient 재현)
+    // 보조색 — 우측 상단
     const R2 = cardH * 0.55;
     const g2 = gc.createRadialGradient(
       imgW * 0.82, 0, 0,
       imgW * 0.82, 0, R2,
     );
-    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.30));  // 웹 opacity 0.30
-    g2.addColorStop(0.40, _hexWithAlpha(secondary, 0.10));
+    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.70));
+    g2.addColorStop(0.35, _hexWithAlpha(secondary, 0.25));
     g2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
     gc.fillStyle = g2;
+    gc.fillRect(0, 0, imgW, cardH);
+
+    // ── 방사형 빛 레이어: 웹 reply-card background 재현 ───────────
+    // 웹: radial-gradient(ellipse 62% 45% at 88% 8%,  rgba(primary, 0.18))
+    //     radial-gradient(ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12))
+    const radW = imgW;
+    const radH = cardH;
+
+    // 우상단 — 주색 (웹과 동일 비율)
+    const rr1 = Math.max(radW * 0.62, radH * 0.45);
+    const gr1 = gc.createRadialGradient(
+      radW * 0.88, radH * 0.08, 0,
+      radW * 0.88, radH * 0.08, rr1,
+    );
+    gr1.addColorStop(0.00, _hexWithAlpha(primary,   0.55));
+    gr1.addColorStop(0.40, _hexWithAlpha(primary,   0.18));
+    gr1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
+    gc.fillStyle = gr1;
+    gc.fillRect(0, 0, imgW, cardH);
+
+    // 좌하단 — 보조색
+    const rr2 = Math.max(radW * 0.50, radH * 0.38);
+    const gr2 = gc.createRadialGradient(
+      radW * 0.12, radH * 0.92, 0,
+      radW * 0.12, radH * 0.92, rr2,
+    );
+    gr2.addColorStop(0.00, _hexWithAlpha(secondary, 0.40));
+    gr2.addColorStop(0.45, _hexWithAlpha(secondary, 0.12));
+    gr2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+    gc.fillStyle = gr2;
     gc.fillRect(0, 0, imgW, cardH);
 
     const glowBuf = glowCanvas.toBuffer('image/png');
