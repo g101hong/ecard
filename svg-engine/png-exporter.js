@@ -228,9 +228,38 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // 단색 배경 (글로우는 합성 단계에서 별도 레이어로 처리)
+  // ── 배경 1: 단색 아이보리 베이스 ───────────────────────────────
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
+
+  // ── 배경 2: 방사형 빛 번짐 (방안4) ─────────────────────────────
+  // 우상단(주색)과 좌하단(보조색)에서 빛이 퍼지는 스테인드글라스 효과.
+  // 경계 글로우(svgToPng 합성단계)가 위에서 내려오고,
+  // 카드 내부에서도 빛이 번지므로 자연스럽게 이어진다.
+  if (emotionScores) {
+    const colorResult = extractDominantColors(emotionScores);
+    if (colorResult) {
+      const { primary, secondary } = colorResult;
+
+      // 우상단 — 주색 방사형
+      const rTop = Math.round(W * 0.62);
+      const gTop = ctx.createRadialGradient(W * 0.88, 0, 0, W * 0.88, 0, rTop);
+      gTop.addColorStop(0.00, _hexWithAlpha(primary,   0.22));
+      gTop.addColorStop(0.45, _hexWithAlpha(primary,   0.08));
+      gTop.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
+      ctx.fillStyle = gTop;
+      ctx.fillRect(0, 0, W, H);
+
+      // 좌하단 — 보조색 방사형
+      const rBot = Math.round(W * 0.52);
+      const gBot = ctx.createRadialGradient(W * 0.12, H, 0, W * 0.12, H, rBot);
+      gBot.addColorStop(0.00, _hexWithAlpha(secondary, 0.15));
+      gBot.addColorStop(0.45, _hexWithAlpha(secondary, 0.05));
+      gBot.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+      ctx.fillStyle = gBot;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
 
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
