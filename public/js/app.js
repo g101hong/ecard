@@ -482,21 +482,22 @@ function applyGlowColors(scores) {
   // 기존 글로우 레이어 제거
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 
-  // 이미지 컨테이너와 결과 영역 위치 측정
   const glassFrame = document.querySelector('.glass-frame');
   const resultArea = document.querySelector('.screen--result');
   if (!glassFrame || !resultArea) return;
 
-  // offsetTop 체인으로 resultArea 기준 절대 위치 계산
-  let offsetTop = 0;
-  let el = glassFrame;
-  while (el && el !== resultArea) {
-    offsetTop += el.offsetTop;
-    el = el.offsetParent;
-  }
-  const boundaryY = offsetTop + glassFrame.offsetHeight;
+  // ── 위치 계산: getBoundingClientRect 기준 ─────────────────────
+  // offsetTop 체인은 screen--result가 position:absolute 일 때
+  // 기준점이 app-frame이 아닌 뷰포트가 되어 오차가 생긴다.
+  // 대신 두 요소의 ClientRect 차이로 resultArea 내부 좌표를 구한다.
+  const frameRect  = glassFrame.getBoundingClientRect();
+  const areaRect   = resultArea.getBoundingClientRect();
+  const scrollTop  = resultArea.scrollTop;   // 스크롤 오프셋 보정
 
-  // 이미지 높이 기반 글로우 범위 계산 (PNG와 동일한 비율)
+  // glassFrame 하단이 resultArea 상단으로부터 얼마나 아래인지
+  const boundaryY  = (frameRect.bottom - areaRect.top) + scrollTop;
+
+  // 이미지 높이 기반 글로우 범위
   const imgH      = glassFrame.offsetHeight;
   const glowAbove = Math.round(imgH * 0.18);  // 이미지 안으로
   const glowBelow = Math.round(imgH * 0.40);  // 카드 안으로
