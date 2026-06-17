@@ -363,12 +363,11 @@ function renderResultFromReply(replyData) {
   elReplyPlace.textContent     = reply.place   ?? '';
   elReplyTagline.textContent   = reply.tagline ?? 'ULSAN — 당신의 울산';
 
-  // 스펙트럼 바는 lastResult.emotionScores가 아직 없을 수 있으므로
-  // accumulated 객체에서 꺼낸다 (api.js가 onReply 전에 onColors에서 이미 설정)
-  // → app.js에서는 lastResult 대신 클로저로 접근하지 않고,
-  //   Phase 2 시점에 window._ecardColorData를 임시로 사용한다.
-  if (window._ecardColorData?.emotionScores) {
-    renderSpectrumBars(window._ecardColorData.emotionScores);
+  // 감성 스펙트럼 + dominant 폰트 적용
+  const scores = window._ecardColorData?.emotionScores;
+  if (scores) {
+    renderSpectrumBars(scores);
+    applyDominantFont(scores);
   }
 
   // fade-up 애니메이션 재시작
@@ -377,6 +376,34 @@ function renderResultFromReply(replyData) {
     void el.offsetHeight;
     el.style.animation = '';
   });
+}
+
+/**
+ * 8차원 감성 점수에서 dominant 감성을 찾아 답글 본문 폰트를 변경한다.
+ * .reply-body에 font-{emotion} 클래스를 토글한다.
+ * @param {Object} scores  { amazement, peace, ... } (0~100)
+ */
+function applyDominantFont(scores) {
+  const replyBody = document.querySelector('.reply-body');
+  if (!replyBody) return;
+
+  // 기존 font-* 클래스 모두 제거
+  Array.from(replyBody.classList)
+    .filter((c) => c.startsWith('font-'))
+    .forEach((c) => replyBody.classList.remove(c));
+
+  // dominant 감성 찾기
+  const EMOTION_KEYS = ['amazement','peace','vitality','nostalgia',
+                        'freshness','grandeur','warmth','mystery'];
+  let maxKey = 'warmth';
+  let maxVal = -1;
+  for (const k of EMOTION_KEYS) {
+    const v = Number(scores[k]) || 0;
+    if (v > maxVal) { maxVal = v; maxKey = k; }
+  }
+
+  replyBody.classList.add(`font-${maxKey}`);
+  console.log(`[app] dominant 감성: ${maxKey} (${maxVal}점) → font-${maxKey} 클래스 적용`);
 }
 
 /**
