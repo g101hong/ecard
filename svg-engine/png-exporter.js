@@ -78,15 +78,15 @@ function resolveFontFamily(emotionScores) {
 const CFG = Object.freeze({
   DEFAULT_WIDTH:      1200,
   COMPRESSION_LEVEL:  8,
-  CARD_RATIO:         0.46,  // 카드 높이 비율 (폰트 전체 확대 반영)
+  CARD_RATIO:         0.46,
   PAD_X_RATIO:        0.07,
-  BG_IMAGE:           '#14110F',
-  BG_CARD:            '#1C1710',
-  LINE_DIVIDER:       '#3A332C',
-  COLOR_ACCENT:       '#C8A84B',
-  COLOR_MAIN:         '#F4ECE0',
-  COLOR_PLACE:        '#B0A090',
-  COLOR_TAGLINE:      '#C8A84B',
+  BG_IMAGE:           '#FFF8F0',   // 아이보리 (라이트)
+  BG_CARD:            '#FDF2E8',   // 카드 배경 (라이트)
+  LINE_DIVIDER:       '#DDD0BE',   // 경계선 (라이트)
+  COLOR_ACCENT:       '#C88C1A',   // 황금 구분선
+  COLOR_MAIN:         '#1A1410',   // 주 텍스트 (다크)
+  COLOR_PLACE:        '#6B5A4A',   // 보조 텍스트
+  COLOR_TAGLINE:      '#C88C1A',   // tagline
   FONT_HAND:          'NanumWaIrDeu',
   FONT_SANS:          'Noto Sans CJK KR',
 });
@@ -235,23 +235,32 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   // ── 방안 2: 상단 글로우 (canvas radialGradient) ───────────────
   const colorResult = extractDominantColors(emotionScores);
   if (colorResult) {
-    const { primary, secondary } = colorResult;
+    const { primary, secondary, tertiary } = colorResult;
 
     // 주색1 — 중앙 상단 타원형 발광
-    const grd1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, H * 0.55);
-    grd1.addColorStop(0.00, _hexWithAlpha(primary,   0.40));
-    grd1.addColorStop(0.45, _hexWithAlpha(primary,   0.12));
+    const grd1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, H * 0.72);
+    grd1.addColorStop(0.00, _hexWithAlpha(primary,   0.65));
+    grd1.addColorStop(0.25, _hexWithAlpha(primary,   0.38));
+    grd1.addColorStop(0.55, _hexWithAlpha(primary,   0.12));
     grd1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
     ctx.fillStyle = grd1;
-    ctx.fillRect(0, 0, W, H * 0.65);
+    ctx.fillRect(0, 0, W, H * 0.80);
 
     // 주색2 — 우상단 보조 발광
-    const grd2 = ctx.createRadialGradient(W * 0.80, 0, 0, W * 0.80, 0, H * 0.40);
-    grd2.addColorStop(0.00, _hexWithAlpha(secondary, 0.25));
-    grd2.addColorStop(0.55, _hexWithAlpha(secondary, 0.06));
+    const grd2 = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, H * 0.50);
+    grd2.addColorStop(0.00, _hexWithAlpha(secondary, 0.45));
+    grd2.addColorStop(0.40, _hexWithAlpha(secondary, 0.16));
     grd2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
     ctx.fillStyle = grd2;
-    ctx.fillRect(W * 0.40, 0, W * 0.60, H * 0.50);
+    ctx.fillRect(W * 0.35, 0, W * 0.65, H * 0.60);
+
+    // 주색3 — 좌상단 3차 발광
+    const grd3 = ctx.createRadialGradient(W * 0.15, 0, 0, W * 0.15, 0, H * 0.35);
+    grd3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.30));
+    grd3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.08));
+    grd3.addColorStop(1.00, _hexWithAlpha(tertiary,  0.00));
+    ctx.fillStyle = grd3;
+    ctx.fillRect(0, 0, W * 0.50, H * 0.45);
   }
 
   // 상단 경계선
