@@ -228,40 +228,9 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // 기본 배경
+  // 단색 배경 (글로우는 합성 단계에서 별도 레이어로 처리)
   ctx.fillStyle = CFG.BG_CARD;
   ctx.fillRect(0, 0, W, H);
-
-  // ── 방안 2: 상단 글로우 (canvas radialGradient) ───────────────
-  const colorResult = extractDominantColors(emotionScores);
-  if (colorResult) {
-    const { primary, secondary, tertiary } = colorResult;
-
-    // 주색1 — 중앙 상단 타원형 발광
-    const grd1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, H * 0.72);
-    grd1.addColorStop(0.00, _hexWithAlpha(primary,   0.65));
-    grd1.addColorStop(0.25, _hexWithAlpha(primary,   0.38));
-    grd1.addColorStop(0.55, _hexWithAlpha(primary,   0.12));
-    grd1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
-    ctx.fillStyle = grd1;
-    ctx.fillRect(0, 0, W, H * 0.80);
-
-    // 주색2 — 우상단 보조 발광
-    const grd2 = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, H * 0.50);
-    grd2.addColorStop(0.00, _hexWithAlpha(secondary, 0.45));
-    grd2.addColorStop(0.40, _hexWithAlpha(secondary, 0.16));
-    grd2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
-    ctx.fillStyle = grd2;
-    ctx.fillRect(W * 0.35, 0, W * 0.65, H * 0.60);
-
-    // 주색3 — 좌상단 3차 발광
-    const grd3 = ctx.createRadialGradient(W * 0.15, 0, 0, W * 0.15, 0, H * 0.35);
-    grd3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.30));
-    grd3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.08));
-    grd3.addColorStop(1.00, _hexWithAlpha(tertiary,  0.00));
-    ctx.fillStyle = grd3;
-    ctx.fillRect(0, 0, W * 0.50, H * 0.45);
-  }
 
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
@@ -342,7 +311,61 @@ export async function svgToPng(
   // dominant 감성에 맞는 폰트로 렌더링됨.
   const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
 
-  // STEP 4: 이미지 + 카드 세로 합성 → 저장
+  // STEP 4: 이미지 + 카드 + 경계 글로우 합성 → 저장
+  //
+  // 글로우는 이미지 하단에서 카드 상단으로 번지는 별도 레이어다.
+  // CSS의 .reply-card::before (top:-60px) 와 동일한 효과를 구현한다:
+  //   - 글로우 캔버스 높이: GLOW_H (이미지 하단 0 ~ 카드 상단 GLOW_H 범위)
+  //   - top: imgH - GLOW_OFFSET (이미지 안쪽으로 약간 올라감)
+
+  const compositeInputs = [
+    { input: imgBuf,  top: 0,    left: 0 },
+    { input: cardBuf, top: imgH, left: 0 },
+  ];
+
+  const colorResult = extractDominantColors(emotionScores);
+  if (colorResult) {
+    const { primary, secondary, tertiary } = colorResult;
+    const GLOW_OFFSET = Math.round(imgH * 0.04);   // 이미지 안쪽으로 4% 올라감
+    const GLOW_H      = Math.round(imgH * 0.25);   // 글로우 높이: 이미지의 25%
+
+    const glowCanvas = createCanvas(imgW, GLOW_H);
+    const gc         = glowCanvas.getContext('2d');
+
+    // 주색1 — 중앙: 경계선에서 위(이미지 쪽)와 아래(카드 쪽) 양방향 발광
+    // radialGradient 중심을 GLOW_H (하단)에 두어 위로 퍼지게 함
+    const g1 = gc.createRadialGradient(imgW / 2, GLOW_H, 0, imgW / 2, GLOW_H, GLOW_H * 1.0);
+    g1.addColorStop(0.00, _hexWithAlpha(primary,   0.70));
+    g1.addColorStop(0.30, _hexWithAlpha(primary,   0.35));
+    g1.addColorStop(0.65, _hexWithAlpha(primary,   0.10));
+    g1.addColorStop(1.00, _hexWithAlpha(primary,   0.00));
+    gc.fillStyle = g1;
+    gc.fillRect(0, 0, imgW, GLOW_H);
+
+    // 주색2 — 우측에서 보조 발광
+    const g2 = gc.createRadialGradient(imgW * 0.82, GLOW_H, 0, imgW * 0.82, GLOW_H, GLOW_H * 0.80);
+    g2.addColorStop(0.00, _hexWithAlpha(secondary, 0.50));
+    g2.addColorStop(0.45, _hexWithAlpha(secondary, 0.14));
+    g2.addColorStop(1.00, _hexWithAlpha(secondary, 0.00));
+    gc.fillStyle = g2;
+    gc.fillRect(imgW * 0.35, 0, imgW * 0.65, GLOW_H);
+
+    // 주색3 — 좌측 보조 발광
+    const g3 = gc.createRadialGradient(imgW * 0.18, GLOW_H, 0, imgW * 0.18, GLOW_H, GLOW_H * 0.65);
+    g3.addColorStop(0.00, _hexWithAlpha(tertiary,  0.35));
+    g3.addColorStop(0.50, _hexWithAlpha(tertiary,  0.08));
+    g3.addColorStop(1.00, _hexWithAlpha(tertiary,  0.00));
+    gc.fillStyle = g3;
+    gc.fillRect(0, 0, imgW * 0.50, GLOW_H);
+
+    const glowBuf = glowCanvas.toBuffer('image/png');
+    compositeInputs.push({
+      input: glowBuf,
+      top:   imgH - GLOW_OFFSET,   // 이미지 안쪽에서 시작 → 카드 위까지 걸침
+      left:  0,
+    });
+  }
+
   await sharp({
     create: {
       width:      imgW,
@@ -351,10 +374,7 @@ export async function svgToPng(
       background: CFG.BG_IMAGE,
     },
   })
-  .composite([
-    { input: imgBuf,  top: 0,    left: 0 },
-    { input: cardBuf, top: imgH, left: 0 },
-  ])
+  .composite(compositeInputs)
   .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
   .toFile(outputPath);
 
