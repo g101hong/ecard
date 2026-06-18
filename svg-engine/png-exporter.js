@@ -241,16 +241,16 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
   <!-- 배경: 아이보리 베이스 -->
   <rect width="${W}" height="${H}" fill="${CFG.BG_CARD}"/>
 
-  <!-- 방사형 빛: 우상단 tertiary  (--reply-main  0.18) -->
+  <!-- 방사형 빛: 우상단 tertiary, opacity 0.18 -->
   <rect width="${W}" height="${H}" fill="url(#rg1)"/>
 
-  <!-- 방사형 빛: 좌하단 quaternary (--reply-sub   0.12) -->
+  <!-- 방사형 빛: 좌하단 quaternary, opacity 0.12 -->
   <rect width="${W}" height="${H}" fill="url(#rg2)"/>
 
-  <!-- 상단 글로우 height=55% primary   (--glow-primary   0.42) -->
+  <!-- 상단 글로우 primary, opacity 0.42 -->
   <rect width="${W}" height="${glowH}" fill="url(#rg3)"/>
 
-  <!-- 상단 글로우 height=55% secondary (--glow-secondary 0.30) -->
+  <!-- 상단 글로우 secondary, opacity 0.30 -->
   <rect width="${W}" height="${glowH}" fill="url(#rg4)"/>
 </svg>`;
 }
