@@ -178,6 +178,120 @@ function fillWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 // ── 답글 카드 PNG 버퍼 생성 (@napi-rs/canvas) ─────────────────
+
+// ── A안: 배경·글로우 전용 SVG 생성 ────────────────────────────
+/**
+ * 답글 카드의 배경(아이보리) + 방사형 빛 + 상단 글로우를
+ * SVG <radialGradient>로 생성한다.
+ *
+ * CSS 대응:
+ *   방사형 빛  → reply-card { background: radial-gradient(ellipse ...) }
+ *   상단 글로우 → reply-card::before { background: radial-gradient(ellipse ...) }
+ *
+ * gradientTransform="scale(sx, sy)"으로 CSS ellipse 비율을 수학적으로 동일하게 재현.
+ * sharp(librsvg)가 래스터라이즈하므로 웹 브라우저 렌더링과 동일한 결과.
+ *
+ * @param {number} W  카드 너비(px)
+ * @param {number} H  카드 높이(px)
+ * @param {string} primary    주색 hex
+ * @param {string} secondary  보조색 hex
+ * @returns {string}  SVG 문자열
+ */
+function buildReplyBgSVG(W, H, primary, secondary) {
+  // hex → 'r g b' (SVG stop-color용)
+  const hx = hex => {
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return `rgb(${r},${g},${b})`;
+  };
+
+  // CSS ellipse radial-gradient → SVG <radialGradient> 변환 헬퍼
+  // cxR/cyR: 중심 위치 (0~1)
+  // rxR: CSS ellipse X 비율 (너비 기준 0~1)
+  // ryR: CSS ellipse Y 비율 (높이 기준 0~1)
+  // SVG gradientTransform="translate(cx,cy) scale(sx,sy)"로 타원 재현
+  const makeRG = (id, W, H, cxR, cyR, rxR, ryR, colorHex, stops) => {
+    const cx  = W * cxR;
+    const cy  = H * cyR;
+    const rx  = W * rxR;
+    const ry  = H * ryR;
+    // 긴 축을 반경 r로 두고 짧은 축을 scale로 압축
+    const r   = Math.max(rx, ry);
+    const sx  = rx / r;
+    const sy  = ry / r;
+    const col = hx(colorHex);
+
+    const stopTags = stops.map(({ pos, alpha }) =>
+      `<stop offset="${(pos*100).toFixed(1)}%"` +
+      ` stop-color="${col}" stop-opacity="${alpha.toFixed(3)}"/>`
+    ).join('\n      ');
+
+    // gradientUnits="userSpaceOnUse" + gradientTransform으로 절대 픽셀 기준 타원
+    return `<radialGradient id="${id}"
+      gradientUnits="userSpaceOnUse"
+      cx="0" cy="0" r="${r.toFixed(2)}"
+      gradientTransform="translate(${cx.toFixed(2)},${cy.toFixed(2)}) scale(${sx.toFixed(6)},${sy.toFixed(6)})">
+      ${stopTags}
+    </radialGradient>`;
+  };
+
+  // ── 방사형 빛 (reply-card background) ────────────────────────
+  // 웹: ellipse 62% 45% at 88% 8%,  rgba(primary,   0→transparent 68%)
+  const rg1 = makeRG('rg1', W, H,
+    0.88, 0.08, 0.62, 0.45, primary, [
+      { pos: 0.00, alpha: 0.55 },
+      { pos: 0.45, alpha: 0.15 },
+      { pos: 0.68, alpha: 0.00 },
+    ]);
+  // 웹: ellipse 50% 38% at 12% 92%, rgba(secondary, 0→transparent 62%)
+  const rg2 = makeRG('rg2', W, H,
+    0.12, 0.92, 0.50, 0.38, secondary, [
+      { pos: 0.00, alpha: 0.40 },
+      { pos: 0.50, alpha: 0.10 },
+      { pos: 0.62, alpha: 0.00 },
+    ]);
+
+  // ── 상단 글로우 (reply-card::before, height=55%) ──────────────
+  // 웹: ellipse 85% 70% at 50% 0%, primary→transparent 70%  opacity:1
+  const glowH = Math.round(H * 0.55);
+  const rg3 = makeRG('rg3', W, glowH,
+    0.50, 0.00, 0.85, 0.70, primary, [
+      { pos: 0.00, alpha: 1.00 },
+      { pos: 0.35, alpha: 0.55 },
+      { pos: 0.70, alpha: 0.00 },
+    ]);
+  // 웹: ellipse 55% 55% at 82% 0%, secondary→transparent 68%
+  const rg4 = makeRG('rg4', W, glowH,
+    0.82, 0.00, 0.55, 0.55, secondary, [
+      { pos: 0.00, alpha: 0.70 },
+      { pos: 0.40, alpha: 0.20 },
+      { pos: 0.68, alpha: 0.00 },
+    ]);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    ${rg1}
+    ${rg2}
+    ${rg3}
+    ${rg4}
+  </defs>
+
+  <!-- 배경: 아이보리 베이스 -->
+  <rect width="${W}" height="${H}" fill="${CFG.BG_CARD}"/>
+
+  <!-- 방사형 빛: 우상단 주색 (reply-card background) -->
+  <rect width="${W}" height="${H}" fill="url(#rg1)"/>
+
+  <!-- 방사형 빛: 좌하단 보조색 (reply-card background) -->
+  <rect width="${W}" height="${H}" fill="url(#rg2)"/>
+
+  <!-- 상단 글로우 height=55% (reply-card::before) -->
+  <rect width="${W}" height="${glowH}" fill="url(#rg3)"/>
+  <rect width="${W}" height="${glowH}" fill="url(#rg4)"/>
+</svg>`;
+}
+
 function buildReplyCardBuffer(reply, W, emotionScores = null) {
   // dominant 감성에 맞는 폰트 결정 (없으면 NanumWaIrDeu)
   const fontFamily = resolveFontFamily(emotionScores);
@@ -228,43 +342,9 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // ── 배경 1: 단색 아이보리 베이스 ───────────────────────────────
-  ctx.fillStyle = CFG.BG_CARD;
-  ctx.fillRect(0, 0, W, H);
-
-  // ── 배경 2: 방사형 빛 — ellipse scale() 트릭으로 CSS와 동일하게 재현 ──
-  if (emotionScores) {
-    const _cr = extractDominantColors(emotionScores);
-    if (_cr) {
-      const _fillEG = (c, cxR, cyR, rxR, ryR, hex, stops) => {
-        const cx = W * cxR, cy = H * cyR;
-        const rx = W * rxR, ry = H * ryR;
-        const r  = Math.max(rx, ry);
-        const sx = rx / r, sy = ry / r;
-        c.save();
-        c.translate(cx, cy);
-        c.scale(sx, sy);
-        const g = c.createRadialGradient(0, 0, 0, 0, 0, r);
-        for (const { pos, alpha } of stops)
-          g.addColorStop(pos, _hexWithAlpha(hex, alpha));
-        c.fillStyle = g;
-        c.fillRect(-cx / sx, -cy / sy, W / sx, H / sy);
-        c.restore();
-      };
-      // 웹: ellipse 62% 45% at 88% 8%,  rgba(primary,   0.18)
-      _fillEG(ctx, 0.88, 0.08, 0.62, 0.45, _cr.primary, [
-        { pos: 0.00, alpha: 0.55 },
-        { pos: 0.45, alpha: 0.15 },
-        { pos: 1.00, alpha: 0.00 },
-      ]);
-      // 웹: ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12)
-      _fillEG(ctx, 0.12, 0.92, 0.50, 0.38, _cr.secondary, [
-        { pos: 0.00, alpha: 0.40 },
-        { pos: 0.50, alpha: 0.10 },
-        { pos: 1.00, alpha: 0.00 },
-      ]);
-    }
-  }
+  // ── 배경 1: 단색 아이보리 베이스 (투명 — SVG 레이어가 베이스 포함) ─
+  // canvas는 텍스트·선만 담당. 배경·방사형·글로우는 buildReplyBgSVG가 처리.
+  ctx.clearRect(0, 0, W, H);   // 투명 배경
 
   // 상단 경계선
   ctx.fillStyle = CFG.LINE_DIVIDER;
@@ -341,128 +421,36 @@ export async function svgToPng(
   const imgW = IW ?? W;
   const imgH = IH ?? Math.round(W * parseSvgRatio(svgString));
 
-  // STEP 3: 답글 카드 PNG 생성 (@napi-rs/canvas — librsvg 완전 우회)
-  // dominant 감성에 맞는 폰트로 렌더링됨.
-  const { buf: cardBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
-
-  // STEP 4: 이미지 + 카드 합성 → 저장
+  // STEP 3a: 배경·글로우 SVG → PNG (librsvg 래스터라이즈)
   //
-  // 웹화면(reply-card CSS)과 동일한 구조로 재현:
-  //   ┌─────────────────────────────┐
-  //   │  SVG 스테인드글라스 이미지   │ ← imgBuf (색채 변환 없음)
-  //   ├─────────────────────────────┤ ← 경계선
-  //   │::before 상단 글로우          │   reply-card::before 와 동일
-  //   │  ellipse 85%×70% at 50% 0%  │   alpha: primary×0.42, secondary×0.30
-  //   │                             │
-  //   │  방사형 빛 (방안4)           │   reply-card background 와 동일
-  //   │  우상단 ellipse 62%×45%     │   alpha: primary×0.18
-  //   │  좌하단 ellipse 50%×38%     │   alpha: secondary×0.12
-  //   │                             │
-  //   │  텍스트 (main/place/tagline) │
-  //   └─────────────────────────────┘
-
-  const compositeInputs = [
-    { input: imgBuf,  top: 0,    left: 0 },
-    { input: cardBuf, top: imgH, left: 0 },
-  ];
+  // ┌─────────────────────────────┐
+  // │  아이보리 베이스             │  BG_CARD
+  // │  방사형 빛 (우상단·좌하단)   │  reply-card background 와 CSS 동일
+  // │  상단 글로우 (height=55%)    │  reply-card::before 와 CSS 동일
+  // └─────────────────────────────┘
+  // SVG <radialGradient gradientTransform="scale">로 CSS ellipse를 수학적 동일 재현
 
   const colorResult = extractDominantColors(emotionScores);
-  if (colorResult) {
-    const { primary, secondary } = colorResult;
+  const { primary, secondary } = colorResult ?? { primary: '#888888', secondary: '#888888' };
 
-    // ── CSS ellipse radial-gradient를 canvas로 재현하는 헬퍼 ─────────
-    // canvas는 원형 gradient만 지원. ctx.scale()로 타원을 근사한다.
-    //
-    // 사용법: fillEllipseGradient(ctx, W, H, cx%, cy%, rx%, ry%, stops)
-    //   cx/cy: 중심 위치 (0~1, 캔버스 전체 기준)
-    //   rx/ry: CSS ellipse 비율 (0~1, 캔버스 너비/높이 기준)
-    //   stops: [{pos, alpha}]
-    function fillEllipseGradient(c, W, H, cxR, cyR, rxR, ryR, hex, stops) {
-      const cx = W * cxR;
-      const cy = H * cyR;
-      const rx = W * rxR;
-      const ry = H * ryR;
-      const r  = Math.max(rx, ry);      // 원 반경 (scale 전)
-      const sx = rx / r;                // X 스케일
-      const sy = ry / r;                // Y 스케일
+  // STEP 3b를 먼저 실행해 실제 cardH 확정 → bgSvg height에 사용
+  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
 
-      c.save();
-      c.translate(cx, cy);
-      c.scale(sx, sy);
+  const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary);
+  const bgBuf    = await sharp(Buffer.from(bgSvgStr, 'utf-8'))
+    .resize({ width: imgW })
+    .png()
+    .toBuffer();
 
-      const grad = c.createRadialGradient(0, 0, 0, 0, 0, r);
-      for (const { pos, alpha } of stops) {
-        grad.addColorStop(pos, _hexWithAlpha(hex, alpha));
-      }
-      c.fillStyle = grad;
-
-      // scale된 좌표계에서 캔버스 전체를 덮는 rect
-      c.fillRect(-cx / sx, -cy / sy, W / sx, H / sy);
-      c.restore();
-    }
-
-    const glowCanvas = createCanvas(imgW, cardH);
-    const gc         = glowCanvas.getContext('2d');
-
-    // ── 상단 글로우 — 웹 reply-card::before 재현 ──────────────────
-    // CSS: radial-gradient(ellipse 85% 70% at 50% 0%, primary→transparent 70%)
-    //      opacity: 1
-    fillEllipseGradient(gc, imgW, cardH,
-      0.50, 0,      // 중심: 상단 중앙
-      0.85, 0.70,   // CSS ellipse 85% 70%
-      primary,
-      [
-        { pos: 0.00, alpha: 1.00 },
-        { pos: 0.35, alpha: 0.55 },
-        { pos: 0.70, alpha: 0.10 },
-        { pos: 1.00, alpha: 0.00 },
-      ],
-    );
-
-    // CSS: radial-gradient(ellipse 55% 55% at 82% 0%, secondary→transparent 68%)
-    fillEllipseGradient(gc, imgW, cardH,
-      0.82, 0,      // 중심: 우측 상단
-      0.55, 0.55,   // CSS ellipse 55% 55%
-      secondary,
-      [
-        { pos: 0.00, alpha: 0.70 },
-        { pos: 0.40, alpha: 0.20 },
-        { pos: 1.00, alpha: 0.00 },
-      ],
-    );
-
-    // ── 방사형 빛 — 웹 reply-card background 재현 ─────────────────
-    // CSS: radial-gradient(ellipse 62% 45% at 88% 8%,  rgba(primary,   0.18))
-    fillEllipseGradient(gc, imgW, cardH,
-      0.88, 0.08,   // 중심: 우상단
-      0.62, 0.45,   // CSS ellipse 62% 45%
-      primary,
-      [
-        { pos: 0.00, alpha: 0.55 },
-        { pos: 0.45, alpha: 0.15 },
-        { pos: 1.00, alpha: 0.00 },
-      ],
-    );
-
-    // CSS: radial-gradient(ellipse 50% 38% at 12% 92%, rgba(secondary, 0.12))
-    fillEllipseGradient(gc, imgW, cardH,
-      0.12, 0.92,   // 중심: 좌하단
-      0.50, 0.38,   // CSS ellipse 50% 38%
-      secondary,
-      [
-        { pos: 0.00, alpha: 0.40 },
-        { pos: 0.50, alpha: 0.10 },
-        { pos: 1.00, alpha: 0.00 },
-      ],
-    );
-
-    const glowBuf = glowCanvas.toBuffer('image/png');
-    compositeInputs.push({
-      input: glowBuf,
-      top:   imgH,
-      left:  0,
-    });
-  }
+  // STEP 4: 합성
+  //   imgBuf  (SVG 스테인드글라스)
+  //   bgBuf   (배경+방사형+글로우 SVG 래스터)   ← 웹 CSS와 동일
+  //   textBuf (텍스트+선 canvas)               ← 폰트 유지
+  const compositeInputs = [
+    { input: imgBuf,  top: 0,    left: 0 },
+    { input: bgBuf,   top: imgH, left: 0 },
+    { input: textBuf, top: imgH, left: 0 },
+  ];
 
   await sharp({
     create: {
