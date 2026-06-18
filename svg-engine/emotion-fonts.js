@@ -19,9 +19,9 @@
  */
 export const EMOTION_FONT_MAP = Object.freeze({
   amazement: {
-    family:        'Black Han Sans',
-    ttfPath:       'BlackHanSans-Regular.ttf',
-    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap',
+    family:        'Hahmlet',
+    ttfPath:       'Hahmlet-Regular.ttf',
+    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&display=swap',
   },
   peace: {
     family:        'Gowun Batang',
@@ -73,7 +73,7 @@ export const FALLBACK_FONT = EMOTION_FONT_MAP.warmth;
  *
  * @example
  *   pickFontByEmotion({ amazement:80, peace:20, ... })
- *   → { emotion: 'amazement', font: { family: 'Black Han Sans', ... } }
+ *   → { emotion: 'amazement', font: { family: 'Hahmlet', ... } }
  */
 export function pickFontByEmotion(emotionScores) {
   if (!emotionScores || typeof emotionScores !== 'object') {
