@@ -265,8 +265,8 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const maxTextW = W - px * 2;
 
   const fMain  = Math.round(W * 0.0576);
-  const fPlace = Math.round(W * 0.0512);
-  const fTag   = Math.round(W * 0.0288);
+  const fPlace = Math.round(W * 0.0411);
+  const fTag   = Math.round(W * 0.0329);
 
   const lhMain  = Math.round(fMain  * 1.45);
   const lhPlace = Math.round(fPlace * 1.45);
