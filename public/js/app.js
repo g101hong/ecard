@@ -80,7 +80,7 @@ function extractDominantColors(emotionScores) {
   const sorted = keys
     .map((k) => ({ emotion: k, score: Number(emotionScores[k]) || 0 }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    .slice(0, 4);
   if (sorted[0].score === 0) return null;
   const colors = sorted.map(({ emotion, score }) => {
     const base = EMOTION_BASE_COLOR[emotion];
@@ -95,9 +95,10 @@ function extractDominantColors(emotionScores) {
   });
   return {
     colors,
-    primary:   colors[0].mid,
-    secondary: colors[1]?.mid ?? colors[0].mid,
-    tertiary:  colors[2]?.mid ?? colors[0].mid,
+    primary:     colors[0].mid,
+    secondary:   colors[1]?.mid ?? colors[0].mid,
+    tertiary:    colors[2]?.mid ?? colors[0].mid,
+    quaternary:  colors[3]?.mid ?? colors[0].mid,
   };
 }
 
@@ -477,18 +478,18 @@ function applyGlowColors(scores) {
   const result = extractDominantColors(scores);
   if (!result) return;
 
-  const { primary, secondary } = result;
+  const { primary, secondary, tertiary, quaternary } = result;
 
   const replyCard = document.querySelector('.reply-card');
   if (!replyCard) return;
 
   // ── reply-card에 모든 색상 변수 주입 ─────────────────────────
-  // ::before 상단 글로우 (방안2)
+  // ::before 상단 글로우 (방안2) — 1순위: glow-primary, 2순위: glow-secondary
   replyCard.style.setProperty('--glow-primary',   primary);
   replyCard.style.setProperty('--glow-secondary', secondary);
-  // 방사형 빛 (방안4)
-  replyCard.style.setProperty('--reply-main', _hexToRgba(primary,   0.18));
-  replyCard.style.setProperty('--reply-sub',  _hexToRgba(secondary, 0.12));
+  // 방사형 빛 번짐 (방안4) — 3순위: reply-main(우상단), 4순위: reply-sub(좌하단)
+  replyCard.style.setProperty('--reply-main', _hexToRgba(tertiary,    0.18));
+  replyCard.style.setProperty('--reply-sub',  _hexToRgba(quaternary,  0.12));
 
   // 글로우 애니메이션 재시작
   replyCard.classList.remove('glow-active');
