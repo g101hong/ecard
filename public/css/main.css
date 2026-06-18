@@ -29,13 +29,13 @@
  * ─────────────────────────────────────────────────────────────────
  * 타이포그래피
  * ─────────────────────────────────────────────────────────────────
- *   --font-display : 'Black Han Sans'  — 헤드라인 (한국적 인장·각인 느낌)
+ *   --font-display : 'Hahmlet'  — 헤드라인 (경이·웅장한 세리프 느낌)
  *   --font-body    : 'Pretendard', 'Noto Sans KR' — 본문/UI
  *   --font-hand    : 'Nanum WalrDeu' — 손글씨 답글 (기존 자산 유지)
  */
 
 /* 기본 폰트 — UI/제목 */
-@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
 /* 감성별 답글 폰트 — Google Fonts 한글 무료 */
@@ -55,7 +55,7 @@
 /* ============================================================= */
 
 .reply-body.font-amazement .reply-body__main,
-.reply-body.font-amazement .reply-body__place { font-family: 'Black Han Sans', sans-serif; }
+.reply-body.font-amazement .reply-body__place { font-family: 'Hahmlet', serif; }
 
 .reply-body.font-peace     .reply-body__main,
 .reply-body.font-peace     .reply-body__place { font-family: 'Gowun Batang', serif; }
@@ -102,7 +102,7 @@
   --text-faint: #A0887A;   /* 희미한 텍스트 */
 
   /* 타이포 */
-  --font-display: 'Black Han Sans', 'Noto Sans KR', sans-serif;
+  --font-display: 'Hahmlet', 'Noto Serif KR', serif;
   --font-body:    'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
   --font-hand:    'NanumWaIrDeu', 'Noto Serif CJK KR', cursive;
 
