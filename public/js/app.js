@@ -1,38 +1,29 @@
 /**
  * @fileoverview 울산 E-Card — 프론트엔드 앱 진입점
- * @version 5.0.0  [방안C] SSE 2단계 렌더
+ * @version 6.0.0  [방안D] 정적 경승지 이미지 표시로 전환
  *
  * ─────────────────────────────────────────────────────────────────
- * [방안C 변경사항] onSubmit() 내부만 수정
+ * [방안D 변경사항] SVG 패널 색채 패칭 → 정적 ulsan_scene 이미지 표시
  * ─────────────────────────────────────────────────────────────────
  *
- *   기존 (단일 await):
- *     const data = await analyzeImpression(text, options);
- *     applyDeltaColorsToSVG(data.emotionScores, data.diversitySeed);
- *     revealSVG();
- *     renderResult(data);
- *     setPhase('done');
+ *   기존 (SVG 패널 ID 기반 색채 패칭, v5.0.0):
+ *     loadSVG()                                   // 초기화 시 1회
+ *     applyDeltaColorsToSVG(scores, seed)          // SVG 색상 패치
+ *     revealSVG()                                  // 블러 해제
+ *     resetSVG()                                   // 원본 SVG로 복원
  *
- *   방안C (2단계 콜백):
- *     analyzeImpression(text, {
- *       ...options,
- *       onColors: (d) => {
- *         // Phase 1 — Gemini 완료 즉시 실행
- *         applyDeltaColorsToSVG(d.emotionScores, d.diversitySeed);
- *         revealSVG();                  ← 사용자가 색채 전환 먼저 봄
- *         renderPaletteStrip(...);
- *       },
- *       onReply: (d) => {
- *         // Phase 2 — colors 직후 수십ms 뒤 실행
- *         renderResultFromReply(d);     ← 답글 카드 뒤따라 등장
- *         setPhase('done');
- *       },
- *     });
- *     // await 없이 바로 진행 — lastResult는 done 이벤트에서 설정
+ *   방안D (AI 분석 spotIndex → 정적 이미지, v6.0.0):
+ *     showSceneImage(spotIndex)                    // ulsan_scene_XX 표시
+ *     revealSceneImage()                           // 블러 해제
+ *     resetSceneImage()                            // 이미지 초기화
  *
- *   나머지 함수(init, bindEvents, onReset, onSave, onShare,
- *   renderResult, renderKeywordChips, renderSpectrumBars 등)는
- *   변경 없음.
+ *   SVG 색채 패칭 코드를 사용하지 않으므로 svg-renderer.js import를
+ *   scene-image.js로 교체했다. (svg-renderer.js / color-engine.js는
+ *   서버사이드 PNG 생성(svg-engine) 경로와는 무관하며, 파일 자체는
+ *   하위 호환을 위해 보존하되 app.js에서는 더 이상 참조하지 않는다.)
+ *
+ *   analyzeImpression()의 SSE 2단계 콜백 구조(onColors/onReply)는
+ *   그대로 유지된다 — colorsData.spotIndex만 새로 활용한다.
  *
  * ─────────────────────────────────────────────────────────────────
  */
@@ -44,9 +35,9 @@
 // =============================================================================
 
 import { SPOTS }           from './spots.js';
-import { loadSVG,
-         revealSVG,
-         resetSVG }        from './svg-renderer.js';
+import { showSceneImage,
+         revealSceneImage,
+         resetSceneImage } from './scene-image.js';
 import { analyzeImpression,
          requestCard }     from './api.js';
 
@@ -171,12 +162,6 @@ function setPhase(next) {
 // =============================================================================
 
 async function init() {
-  try {
-    await loadSVG();
-  } catch (err) {
-    console.error('[app] SVG 로드 실패:', err);
-    showError('스테인드글라스 이미지를 불러오지 못했습니다. 새로고침 해주세요.');
-  }
   bindEvents();
   setPhase('idle');
 }
@@ -229,7 +214,7 @@ function onTextInput() {
 }
 
 // =============================================================================
-// ⑧ 제출 핸들러 — [방안C 핵심 변경부]
+// ⑧ 제출 핸들러 — [방안D] colors 이벤트로 정적 경승지 이미지 표시
 // =============================================================================
 
 async function onSubmit() {
@@ -247,13 +232,15 @@ async function onSubmit() {
       tripDuration: selectedDuration,
       companion:    selectedCompanion,
 
-      // Phase 1: colors 이벤트 — emotionScores 저장 + SVG 블러 해제
+      // Phase 1: colors 이벤트 — emotionScores 저장 + 경승지 이미지 표시
       onColors: (colorsData) => {
         // emotionScores 임시 저장 — onReply에서 스펙트럼/폰트에 사용
         window._ecardColorData = colorsData;
 
-        // SVG 원본 그대로 블러만 해제
-        revealSVG();
+        // AI가 분석한 spotIndex(0~11)에 해당하는 정적 이미지를 표시
+        showSceneImage(colorsData.spotIndex).then(() => {
+          revealSceneImage();
+        });
 
         setPhase('colors');
       },
@@ -303,7 +290,7 @@ function onReset() {
   selectedDuration  = null;
   selectedCompanion = null;
 
-  resetSVG();
+  resetSceneImage();
 
   // 글로우 레이어 제거
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
@@ -332,7 +319,11 @@ async function onSave() {
   elSaveBtn.disabled    = true;
   elSaveBtn.textContent = '저장 중...';
   try {
-    const data = await requestCard(lastResult.emotionScores, lastResult.reply ?? null);
+    const data = await requestCard(
+      lastResult.emotionScores,
+      lastResult.reply ?? null,
+      lastResult.spotIndex,
+    );
     if (data.downloadUrl) {
       const a = document.createElement('a');
       a.href     = data.downloadUrl;
