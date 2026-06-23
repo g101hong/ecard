@@ -144,6 +144,10 @@ export function buildUserPrompt(pre, visitCtx = null) {
 소감의 내용·감성·장소 언급을 기반으로 가장 연관된 경승지:
 ${spotsReference}
 
+⚠️ 중요: 소감에 경승지 이름이나 명확한 장소(예: 대왕암, 간절곶, 태화강, 반구대 등)가
+직접 언급된 경우, 반드시 그 경승지를 선택하세요. 감성 점수가 다른 경승지와
+더 잘 맞더라도 장소 언급을 최우선으로 합니다.
+
 ### 단계 4: 타이포그래피 & responseText
 responseType 기준:
   A = 활기·경이 중심 (amazement+vitality 합 > 110)
