@@ -136,12 +136,9 @@ body {
   min-height: 100svh;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start; /* center → flex-start: safe-area padding이 실제 작동하도록 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* Safe Area — 노치/Dynamic Island/상태바 대응 */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 button {
@@ -191,6 +188,9 @@ body {
   flex-direction: column;
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
+  /* Safe Area — 노치/Dynamic Island/상태바 상단 잘림 방지 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @media (min-width: 540px) {
@@ -212,8 +212,7 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  /* Safe Area — 노치/Dynamic Island 상단 잘림 방지 */
-  padding: max(20px, calc(env(safe-area-inset-top) + 8px)) 24px 16px;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -293,6 +292,8 @@ body {
 .app-frame.is-result .screen--result {
   position: absolute;
   inset: 0;
+  /* absolute+inset:0은 app-frame padding 무시 → 직접 Safe Area 지정 */
+  padding-top: env(safe-area-inset-top);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
