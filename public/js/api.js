@@ -307,9 +307,24 @@ export async function analyzeImpression(text, options = {}) {
 // ⑤ /api/card — 기존 JSON POST 유지
 // =============================================================================
 
-export async function requestCard(emotionScores, reply = null, size = 1200) {
+/**
+ * E-Card PNG 생성을 요청한다.
+ *
+ * [방안D 변경] spotIndex(emotion-engine 인덱스, 0~11)를 함께 전송한다.
+ * 서버가 이 값으로 assets/scenes/ulsan_scene_XX.jpg 정적 이미지를
+ * 찾아 답글 카드와 합성한다 (더 이상 SVG 패치를 사용하지 않음).
+ *
+ * @param {Object}      emotionScores
+ * @param {Object|null} [reply]
+ * @param {number}      spotIndex   0~11 (emotion-engine 인덱스, 필수)
+ * @param {number}      [size=1200]
+ */
+export async function requestCard(emotionScores, reply = null, spotIndex, size = 1200) {
   if (!emotionScores || typeof emotionScores !== 'object') {
     throw new ApiError('감성 데이터가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
+  }
+  if (typeof spotIndex !== 'number' || spotIndex < 0 || spotIndex > 11) {
+    throw new ApiError('경승지 정보가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
   }
 
   const controller = new AbortController();
@@ -324,6 +339,7 @@ export async function requestCard(emotionScores, reply = null, size = 1200) {
       body:    JSON.stringify({
         emotionScores,
         reply: reply ?? null,
+        spotIndex,
         size:  Math.min(Math.max(size, 400), 2400),
       }),
     });
