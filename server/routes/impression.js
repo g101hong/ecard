@@ -169,7 +169,48 @@ router.post('/', async (req, res) => {
   }
 
   const { emotionScores, typography, isFallback: emotionIsFallback, meta } = emotionResult;
-  const spotIndex = typography?.spotIndex ?? 0;
+
+  // ── 짧은 소감 처리: 12경 언급 감지 후 랜덤 or AI 결과 선택 ─────────
+  //
+  // 공백 제외 15자 이하이고 12경 키워드 언급이 없으면 랜덤 선택.
+  // 키워드가 있으면 15자 이하라도 해당 경승지를 우선한다.
+  //
+  //   '대왕암 좋았어요'  (7자, 대왕암 언급)  → AI 결과 유지 → 대왕암공원
+  //   '울산 너무 좋아요' (8자, 언급 없음)    → 랜덤 선택
+  //   16자 이상                              → AI 분석 결과
+  // ─────────────────────────────────────────────────────────────────
+
+  // 경승지별 감지 키워드 (정식명 + 자주 쓰는 약칭)
+  // spotIndex 순서(0~11)와 일치
+  const SPOT_KEYWORDS = [
+    ['간절곶'],                          // 0 간절곶 일출
+    ['대왕암'],                          // 1 대왕암공원
+    ['강동', '몽돌'],                    // 2 강동 몽돌해변
+    ['장생포', '고래'],                  // 3 장생포 고래문화마을
+    ['외고산', '옹기'],                  // 4 외고산 옹기마을
+    ['반구대', '암각화'],                // 5 반구대 암각화
+    ['대운산', '내원암'],               // 6 대운산 내원암 계곡
+    ['울산대교'],                        // 7 울산대교
+    ['울산대공원'],                      // 8 울산대공원
+    ['태화강', '십리대숲', '대숲'],      // 9 태화강 국가정원·십리대숲
+    ['신불산', '억새'],                  // 10 신불산 억새평원
+    ['가지산'],                          // 11 가지산 사계
+  ];
+
+  const _charCount   = cleanText.replace(/\s+/g, '').length;
+  const _aiSpotIndex = typography?.spotIndex ?? 0;
+
+  // 소감 원문에서 12경 키워드 직접 감지
+  const _mentionedIdx = _charCount <= 15
+    ? SPOT_KEYWORDS.findIndex(keywords =>
+        keywords.some(kw => cleanText.includes(kw))
+      )
+    : -1; // 15자 초과는 AI 결과 그대로 사용
+
+  const spotIndex =
+    _mentionedIdx >= 0 ? _mentionedIdx   // 키워드 언급 → 해당 경승지
+    : _charCount <= 15 ? Math.floor(Math.random() * 12)  // 짧고 언급 없음 → 랜덤
+    : _aiSpotIndex;                      // 충분한 길이 → AI 결과
 
   const processingTimeMs = Date.now() - t0;
 
