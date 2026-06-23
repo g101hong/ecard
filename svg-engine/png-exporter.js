@@ -1,10 +1,16 @@
 /**
  * @fileoverview svg-engine/png-exporter.js
- * @description  SVG → PNG 변환 + 답글 카드 합성
+ * @description  정적 경승지 이미지(JPG) → PNG 변환 + 답글 카드 합성
+ *
+ * [방안D] 기존에는 SVG 문자열을 sharp로 래스터라이즈했으나, 이제는
+ * 미리 채색된 정적 이미지(assets/scenes/ulsan_scene_XX.jpg)를 입력으로
+ * 받는다. sharp는 SVG/JPG/PNG 등 다양한 포맷을 동일한 방식으로 처리할
+ * 수 있으므로, 입력을 "이미지 버퍼"로 일반화하고 합성 로직(답글 카드,
+ * 글로우 배경)은 그대로 재사용한다.
  *
  * 레이아웃:
  *   ┌──────────────────────────┐
- *   │  스테인드글라스 이미지     │  (sharp — librsvg 경유)
+ *   │  경승지 이미지            │  (sharp — JPG/PNG 디코딩)
  *   ├──────────────────────────┤
  *   │  답글 카드                │  (@napi-rs/canvas — TTF 직접 로드)
  *   │   ────                   │  황금 구분선
@@ -23,6 +29,10 @@
  *     rg2 quaternary → --reply-sub   (좌하단 방사형 빛, opacity 0.12)
  *     rg3 primary    → --glow-primary   (상단 글로우 핵심, opacity 0.42)
  *     rg4 secondary  → --glow-secondary (상단 글로우 보조, opacity 0.30)
+ *   [방안D] svgToPng(svgString, ...) → composeCardPNG(imageBuffer, ...)
+ *     입력이 SVG 문자열에서 정적 이미지 버퍼(JPG)로 변경됨.
+ *     sharp(svgBuf) → sharp(imageBuf)로 호출부만 변경, 나머지 합성
+ *     파이프라인(STEP 2~6)은 동일하게 유지.
  */
 
 'use strict';
@@ -96,13 +106,6 @@ const CFG = Object.freeze({
 // ── 유틸 ──────────────────────────────────────────────────────
 async function ensureDir(p) {
   await mkdir(path.dirname(p), { recursive: true });
-}
-
-function parseSvgRatio(svgString) {
-  const m = svgString.match(/viewBox=["']([^"']+)["']/);
-  if (!m) return 1.0;
-  const p = m[1].trim().split(/[\s,]+/).map(Number);
-  return (p.length >= 4 && p[2] > 0 && p[3] > 0) ? p[3] / p[2] : 1.0;
 }
 
 // ── 텍스트 줄바꿈 유틸 ────────────────────────────────────────
@@ -331,34 +334,38 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
 }
 
 // =============================================================================
-// svgToPng — 메인 변환 + 합성 함수
+// composeCardPNG — 메인 변환 + 합성 함수 [방안D]
 // =============================================================================
 /**
- * SVG를 PNG로 변환하고, reply가 있으면 답글 카드를 합성한다.
+ * 정적 경승지 이미지(JPG) 버퍼를 PNG로 리사이즈하고,
+ * reply가 있으면 답글 카드를 합성한다.
  *
- * @param {string}      svgString
+ * [방안D] 기존 svgToPng(svgString, ...)를 대체. 입력이 SVG 문자열에서
+ * 이미지 버퍼로 바뀌었을 뿐, sharp 기반 합성 파이프라인(STEP 2~6)은
+ * 동일하다 — sharp는 입력 포맷(SVG/JPG/PNG)을 자동 인식하여 디코딩한다.
+ *
+ * @param {Buffer}      imageBuffer      정적 경승지 이미지 버퍼 (JPG)
  * @param {string}      outputPath
  * @param {number}      [size=1200]
  * @param {Object|null} [reply]          { main, place, tagline }
  * @param {Object|null} [emotionScores]  8차원 감성 점수
  * @returns {Promise<string>}
  */
-export async function svgToPng(
-  svgString,
+export async function composeCardPNG(
+  imageBuffer,
   outputPath,
   size          = CFG.DEFAULT_WIDTH,
   reply         = null,
   emotionScores = null,
 ) {
-  if (!svgString?.trim()) throw new Error('svgString이 비어있습니다.');
-  if (!outputPath)        throw new Error('outputPath가 없습니다.');
+  if (!imageBuffer?.length) throw new Error('imageBuffer가 비어있습니다.');
+  if (!outputPath)          throw new Error('outputPath가 없습니다.');
 
   const W = Math.round(Math.max(400, Math.min(2400, size)));
   await ensureDir(outputPath);
 
-  // STEP 1: SVG → PNG 래스터라이즈
-  const svgBuf = Buffer.from(svgString, 'utf-8');
-  const imgBuf = await sharp(svgBuf)
+  // STEP 1: 정적 이미지 → 지정 너비로 리사이즈
+  const imgBuf = await sharp(imageBuffer)
     .resize({ width: W })
     .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
     .toBuffer();
@@ -368,10 +375,10 @@ export async function svgToPng(
     return outputPath;
   }
 
-  // STEP 2: 실제 이미지 크기 확인
+  // STEP 2: 실제 이미지 크기 확인 (JPG는 metadata로 정확한 높이를 바로 얻는다)
   const { width: IW, height: IH } = await sharp(imgBuf).metadata();
   const imgW = IW ?? W;
-  const imgH = IH ?? Math.round(W * parseSvgRatio(svgString));
+  const imgH = IH ?? W; // 메타데이터를 못 읽는 극히 예외적인 경우의 안전망 (정사각 가정)
 
   // STEP 3: 감성 주색 4종 추출 (emotion-colors.js)
   const colorResult = extractDominantColors(emotionScores);
@@ -394,7 +401,7 @@ export async function svgToPng(
 
   // STEP 6: 최종 합성
   //   Layer 0: 아이보리 베이스 (sharp create)
-  //   Layer 1: 스테인드글라스 이미지 (imgBuf)
+  //   Layer 1: 경승지 이미지 (imgBuf)
   //   Layer 2: 배경+방사형+글로우 SVG 래스터 (bgBuf)  ← 웹 CSS와 동일
   //   Layer 3: 텍스트 canvas (textBuf)
   await sharp({
@@ -416,4 +423,4 @@ export async function svgToPng(
   return outputPath;
 }
 
-export default { svgToPng };
+export default { composeCardPNG };

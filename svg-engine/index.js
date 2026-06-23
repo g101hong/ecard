@@ -108,7 +108,7 @@ import {
   SPOT_NAMES,
 } from './color-calculator.js';
 import { patchSVG, validateSvgAssets, debugPrintPatch, clearSvgCache } from './svg-patcher.js';
-import { svgToPng } from './png-exporter.js';
+import { composeCardPNG } from './png-exporter.js';
 
 // =============================================================================
 // ① SVG ID ↔ emotion-engine 인덱스 매핑 상수 (재노출)
@@ -202,16 +202,21 @@ export { patchSVG };
 export { validateSvgAssets, debugPrintPatch, clearSvgCache };
 
 /**
- * 패치된 SVG 문자열을 PNG 파일로 변환하여 저장한다.
+ * 정적 경승지 이미지(JPG) 버퍼를 PNG 파일로 변환·리사이즈하고,
+ * reply가 있으면 답글 카드를 합성하여 저장한다.
  *
- * @param {string} svgString    패치된 SVG 문자열
+ * [방안D] 기존 svgToPng(SVG 문자열 입력)를 대체한다. sharp는 SVG/JPG/PNG
+ * 등 다양한 래스터·벡터 입력을 동일하게 처리할 수 있으므로 내부 합성
+ * 로직(buildReplyCardBuffer, buildReplyBgSVG)은 변경 없이 재사용한다.
+ *
+ * @param {Buffer} imageBuffer  정적 경승지 이미지 버퍼 (JPG)
  * @param {string} outputPath   저장할 PNG 파일 경로
  * @param {number} [size=1200]  출력 이미지 너비(px) — 높이는 원본 비율 유지
  * @param {{ main?:string, place?:string, tagline?:string }|null} [reply]
- *   Phase 2 타이포그래피 합성용 (현재는 전달만 하고 png-exporter가 처리)
+ *   타이포그래피 합성용 답글 데이터
  * @returns {Promise<string>}  저장된 파일 경로
  */
-export { svgToPng };
+export { composeCardPNG };
 
 // =============================================================================
 // ④ 통합 함수 — PNG E-Card 한 번에 생성
@@ -220,9 +225,9 @@ export { svgToPng };
 /**
  * @typedef {Object} GenerateCardOptions
  * @property {Object} emotionScores
- *   8차원 감성 점수 (각 0~100)
- * @property {number} diversitySeed
- *   preprocessor.js 의 다양성 시드
+ *   8차원 감성 점수 (각 0~100) — 답글 카드의 글로우 색상·폰트 결정에 사용
+ * @property {number} spotIndex
+ *   emotion-engine 인덱스 (0~11) — assets/scenes/ulsan_scene_XX.jpg 선택에 사용
  * @property {string} outputPath
  *   저장할 PNG 경로 (예: './output/f47ac10b.png')
  * @property {number} [size=1200]
@@ -232,13 +237,18 @@ export { svgToPng };
  */
 
 /**
- * SVG 패치 → PNG 변환 → 파일 저장 파이프라인을 단일 호출로 실행한다.
+ * 정적 경승지 이미지 읽기 → PNG 변환 → 답글 카드 합성 → 파일 저장
+ * 파이프라인을 단일 호출로 실행한다.
+ *
+ * [방안D] SVG 패치(spot-XX-N delta 적용) 대신, AI가 분석한 spotIndex에
+ * 해당하는 사전 제작 정적 이미지(assets/scenes/ulsan_scene_XX.jpg)를
+ * 그대로 사용한다.
  *
  * server/routes/card.js 에서 사용하는 메인 함수:
  *
  *   const pngPath = await generateCardPNG({
  *     emotionScores:  req.validated.emotionScores,
- *     diversitySeed:  req.validated.diversitySeed,
+ *     spotIndex:      req.validated.spotIndex,
  *     outputPath:     path.join(OUTPUT_DIR, `${uuidv4()}.png`),
  *     size:           req.validated.size,
  *     reply:          req.validated.reply,
@@ -248,27 +258,40 @@ export { svgToPng };
  * @param {GenerateCardOptions} options
  * @returns {Promise<string>}  저장된 PNG 파일 경로
  *
- * @throws {Error}  assets/stained-glass.svg 읽기 실패, PNG 변환 실패
+ * @throws {Error}  assets/scenes/ulsan_scene_XX.jpg 읽기 실패, PNG 변환 실패
  */
 export async function generateCardPNG({
   emotionScores,
+  spotIndex,
   outputPath,
   size = 1200,
   reply = null,
 }) {
   const t0 = Date.now();
 
-  // 원본 SVG를 그대로 읽어 PNG로 변환 (색채 패치 없음)
-  const { readFile } = await import('fs/promises');
-  const svgPath      = new URL('../assets/stained-glass.svg', import.meta.url);
-  const originalSvg  = await readFile(svgPath, 'utf-8');
+  if (typeof spotIndex !== 'number' || spotIndex < 0 || spotIndex > 11) {
+    throw new Error(`spotIndex가 유효하지 않습니다 (0~11 필요): ${spotIndex}`);
+  }
 
-  // SVG → PNG + 답글 카드 합성 (dominant 감성에 맞는 폰트 적용)
-  const savedPath = await svgToPng(originalSvg, outputPath, size, reply, emotionScores);
+  // spotIndex(emotion-engine 인덱스, 0~11)에 해당하는 정적 이미지를 그대로 읽는다.
+  // 파일명의 XX는 spotIndex와 1:1로 동일하다 (SVG의 spot-XX 패널 번호와는 다른 체계).
+  const { readFile } = await import('fs/promises');
+  const idx          = String(spotIndex).padStart(2, '0');
+  const imagePath     = new URL(`../assets/scenes/ulsan_scene_${idx}.jpg`, import.meta.url);
+
+  let sceneImageBuf;
+  try {
+    sceneImageBuf = await readFile(imagePath);
+  } catch (err) {
+    throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
+  }
+
+  // 정적 이미지 → PNG 리사이즈 + 답글 카드 합성 (dominant 감성에 맞는 폰트 적용)
+  const savedPath = await composeCardPNG(sceneImageBuf, outputPath, size, reply, emotionScores);
 
   console.info(
     `[svg-engine] PNG 생성 완료 | ` +
-    `path=${savedPath} | size=${size}px | ${Date.now() - t0}ms`,
+    `path=${savedPath} | spotIndex=${spotIndex} | size=${size}px | ${Date.now() - t0}ms`,
   );
 
   return savedPath;
@@ -286,7 +309,7 @@ export default {
 
   // 서버사이드 PNG 생성
   patchSVG,
-  svgToPng,
+  composeCardPNG,
   generateCardPNG,
 
   // 자산 검증
