@@ -422,18 +422,27 @@ function applyDominantFont(scores) {
     .filter((c) => c.startsWith('font-'))
     .forEach((c) => replyBody.classList.remove(c));
 
-  // dominant 감성 찾기
-  const EMOTION_KEYS = ['amazement','peace','vitality','nostalgia',
-                        'freshness','grandeur','warmth','mystery'];
-  let maxKey = 'warmth';
+  // dominant 감성 찾기 — emotion-fonts.js EMOTION_PRIORITY 와 동일 순서로 동점 처리
+  // 순서: amazement > mystery > grandeur > nostalgia > warmth > vitality > freshness > peace
+  const EMOTION_PRIORITY = [
+    'amazement', 'mystery', 'grandeur', 'nostalgia',
+    'warmth', 'vitality', 'freshness', 'peace',
+  ];
+
+  // 1단계: 최고 점수 탐색
   let maxVal = -1;
-  for (const k of EMOTION_KEYS) {
+  for (const k of EMOTION_PRIORITY) {
     const v = Number(scores[k]) || 0;
-    if (v > maxVal) { maxVal = v; maxKey = k; }
+    if (v > maxVal) maxVal = v;
   }
 
+  // 2단계: 동점 시 EMOTION_PRIORITY 우선순위로 첫 번째 선택
+  const maxKey = EMOTION_PRIORITY.find(
+    (k) => (Number(scores[k]) || 0) === maxVal
+  ) ?? 'amazement';
+
   replyBody.classList.add(`font-${maxKey}`);
-  console.log(`[app] dominant 감성: ${maxKey} (${maxVal}점) → font-${maxKey} 클래스 적용`);
+  console.log(`[app] dominant 감성: ${maxKey} (${maxVal}점) → font-${maxKey} 클래스 적용 (동점 우선순위 적용)`);
 }
 
 /**
