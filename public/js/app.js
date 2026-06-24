@@ -54,6 +54,11 @@ const EMOTION_BASE_COLOR = {
   mystery:   { h: 270, s: 0.55, l: 0.42 },
 };
 
+// 답글화면 이미지저장 폰트 일치 VALID_EMOTIONS 상수 추가
+const VALID_EMOTIONS = new Set([
+  'amazement', 'mystery', 'grandeur', 'nostalgia', 'warmth',    'vitality', 'freshness', 'peace',
+]);
+
 function _hsl(h, s, l) {
   const a = s * Math.min(l, 1 - l);
   const f = (n) => {
@@ -323,6 +328,8 @@ async function onSave() {
       lastResult.emotionScores,
       lastResult.reply ?? null,
       lastResult.spotIndex,
+      1200,
+      lastResult.dominantEmotion,    // [v3.1] 추가
     );
     if (data.downloadUrl) {
       const a = document.createElement('a');
@@ -375,6 +382,10 @@ function fallbackCopyShare(text) {
 // ⑫ 결과 렌더링
 // =============================================================================
 
+// =============================================================================
+// 변경 3: renderResultFromReply() — applyDominantFont 호출부 수정
+// =============================================================================
+ 
 /**
  * [방안C 신규] Phase2 reply 이벤트 데이터만으로 결과 섹션을 렌더링한다.
  * onReply 콜백에서 호출된다.
@@ -383,23 +394,25 @@ function fallbackCopyShare(text) {
  */
 function renderResultFromReply(replyData) {
   const { reply = {}, primaryEmotion = '울산의 감동', keywords = [] } = replyData;
-
+ 
   renderKeywordChips(keywords);
-
+ 
   elPrimaryEmotion.textContent = primaryEmotion;
   elReplyMain.textContent      = reply.main    ?? '';
   elReplyPlace.textContent     = reply.place   ?? '';
   elReplyTagline.textContent   = reply.tagline ?? 'ULSAN — 당신의 울산';
-
-  // 감성 스펙트럼 + dominant 폰트 적용
-  const scores = window._ecardColorData?.emotionScores;
-  if (scores) {
-    renderSpectrumBars(scores);
-    applyDominantFont(scores);
-    // applyGlowColors는 onReply 콜백에서 showScreen 이후 rAF으로 실행
-    // (화면이 hidden 상태일 때 offsetHeight=0 문제 방지)
+ 
+  // 감성 스펙트럼 렌더링
+  const colorData = window._ecardColorData;
+  if (colorData?.emotionScores) {
+    renderSpectrumBars(colorData.emotionScores);
   }
-
+ 
+  // [v3.1] dominant 폰트: emotionScores 재계산 → dominantEmotion 직접 사용
+  if (colorData?.dominantEmotion) {
+    applyDominantFont(colorData.dominantEmotion);
+  }
+ 
   // fade-up 애니메이션 재시작
   elScreenResult.querySelectorAll('.fade-up').forEach((el) => {
     el.style.animation = 'none';
@@ -408,41 +421,32 @@ function renderResultFromReply(replyData) {
   });
 }
 
+// =============================================================================
+// 변경 2: applyDominantFont() — emotionScores 재계산 제거, dominantEmotion 직접 사용
+// =============================================================================
+ 
 /**
- * 8차원 감성 점수에서 dominant 감성을 찾아 답글 본문 폰트를 변경한다.
- * .reply-body에 font-{emotion} 클래스를 토글한다.
- * @param {Object} scores  { amazement, peace, ... } (0~100)
+ * dominant 감성에 맞는 폰트 클래스를 .reply-body에 적용한다.
+ *
+ * [v3.1] 서버(impression.js)가 결정한 dominantEmotion을 직접 받아 사용.
+ *        클라이언트에서 emotionScores로 재계산하는 로직 제거.
+ *        → 동점·소수점 처리 차이로 인한 불일치 원천 차단.
+ *
+ * @param {string} dominantEmotion  서버에서 결정된 dominant 감성 키
  */
-function applyDominantFont(scores) {
+function applyDominantFont(dominantEmotion) {
   const replyBody = document.querySelector('.reply-body');
   if (!replyBody) return;
-
+ 
   // 기존 font-* 클래스 모두 제거
   Array.from(replyBody.classList)
     .filter((c) => c.startsWith('font-'))
     .forEach((c) => replyBody.classList.remove(c));
-
-  // dominant 감성 찾기 — emotion-fonts.js EMOTION_PRIORITY 와 동일 순서로 동점 처리
-  // 순서: amazement > mystery > grandeur > nostalgia > warmth > vitality > freshness > peace
-  const EMOTION_PRIORITY = [
-    'amazement', 'mystery', 'grandeur', 'nostalgia',
-    'warmth', 'vitality', 'freshness', 'peace',
-  ];
-
-  // 1단계: 최고 점수 탐색
-  let maxVal = -1;
-  for (const k of EMOTION_PRIORITY) {
-    const v = Number(scores[k]) || 0;
-    if (v > maxVal) maxVal = v;
-  }
-
-  // 2단계: 동점 시 EMOTION_PRIORITY 우선순위로 첫 번째 선택
-  const maxKey = EMOTION_PRIORITY.find(
-    (k) => (Number(scores[k]) || 0) === maxVal
-  ) ?? 'amazement';
-
-  replyBody.classList.add(`font-${maxKey}`);
-  console.log(`[app] dominant 감성: ${maxKey} (${maxVal}점) → font-${maxKey} 클래스 적용 (동점 우선순위 적용)`);
+ 
+  // [v3.1] 서버 결정값 직접 사용 — 재계산 없음
+  const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
+  replyBody.classList.add(`font-${safeKey}`);
+  console.log(`[app] dominant 폰트: font-${safeKey} (서버 결정값)`);
 }
 
 /**
