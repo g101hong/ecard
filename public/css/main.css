@@ -35,11 +35,11 @@
  */
 
 /* 기본 폰트 — UI/제목 */
-@import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&family=Stylish&family=IBM+Plex+Sans+KR:wght@300;400&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
 /* 감성별 답글 폰트 — Google Fonts 한글 무료 */
-@import url('https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Jua&family=Gaegu:wght@400;700&family=Gowun+Dodum&family=Gugi&family=Single+Day&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&family=Gugi&family=Single+Day&display=swap');
 
 /* 나눔손글씨 와일드 — 서버 자체 파일 직접 서빙 (CDN 의존 제거) */
 @font-face {
@@ -58,7 +58,7 @@
 .reply-body.font-amazement .reply-body__place { font-family: 'Hahmlet', serif; }
 
 .reply-body.font-peace     .reply-body__main,
-.reply-body.font-peace     .reply-body__place { font-family: 'Gowun Batang', serif; }
+.reply-body.font-peace     .reply-body__place { font-family: 'Stylish', sans-serif; }
 
 .reply-body.font-vitality  .reply-body__main,
 .reply-body.font-vitality  .reply-body__place { font-family: 'Jua', sans-serif; }
@@ -67,13 +67,17 @@
 .reply-body.font-nostalgia .reply-body__place { font-family: 'Gaegu', cursive; }
 
 .reply-body.font-freshness .reply-body__main,
-.reply-body.font-freshness .reply-body__place { font-family: 'Gowun Dodum', sans-serif; }
+.reply-body.font-freshness .reply-body__place { font-family: 'IBM Plex Sans KR', sans-serif; font-weight: 300; }
 
 .reply-body.font-grandeur  .reply-body__main,
 .reply-body.font-grandeur  .reply-body__place { font-family: 'Gugi', serif; }
 
 .reply-body.font-warmth    .reply-body__main,
-.reply-body.font-warmth    .reply-body__place { font-family: 'NanumWaIrDeu', cursive; }
+.reply-body.font-warmth    .reply-body__place { font-family: 'Nanum Pen Script', cursive; }
+
+/* Nanum Pen Script — 다른 폰트 대비 작게 렌더되므로 warmth 전용 크기 보정 (+14%) */
+.reply-body.font-warmth .reply-body__main  { font-size: 32px; }
+.reply-body.font-warmth .reply-body__place { font-size: 23px; }
 
 .reply-body.font-mystery   .reply-body__main,
 .reply-body.font-mystery   .reply-body__place { font-family: 'Single Day', cursive; }
@@ -104,7 +108,7 @@
   /* 타이포 */
   --font-display: 'Hahmlet', 'Noto Serif KR', serif;
   --font-body:    'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
-  --font-hand:    'NanumWaIrDeu', 'Noto Serif CJK KR', cursive;
+  --font-hand:    'Nanum Pen Script', 'NanumWaIrDeu', cursive;
 
   /* 형태 */
   --radius-sm: 10px;
