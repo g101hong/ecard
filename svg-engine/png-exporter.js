@@ -212,7 +212,7 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 // ⑥ 텍스트 레이어 — emotionScores로 직접 폰트 결정
 // =============================================================================
 
-function buildReplyCardBuffer(reply, W, emotionScores) {
+function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
   // emotionScores에서 직접 결정 — 외부 파라미터 없음
   // [v4.1 fix] dominantEmotion이 외부에서 확정된 경우 직접 사용, 없으면 emotionScores 재계산
   const fontFamily = (dominantEmotion && EMOTION_FONT_MAP[dominantEmotion])
@@ -341,7 +341,7 @@ export async function composeCardPNG(
   } = colorResult ?? {};
 
   // emotionScores를 직접 전달 — buildReplyCardBuffer 내부에서 dominant 결정
-  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
+  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores, dominantEmotion);
 
   const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary, tertiary, quaternary);
   const bgBuf    = await sharp(Buffer.from(bgSvgStr, 'utf-8'))
