@@ -1,11 +1,22 @@
 /**
  * @fileoverview server/routes/card.js
  * @description  POST /api/card — E-Card PNG 생성 및 다운로드 URL 반환
+ * @version 2.1.0  [v3.1] dominantEmotion 수신 및 generateCardPNG 전달
  *
- * [방안D] 정적 경승지 이미지(ulsan_scene_XX.jpg) 기반으로 변경
+ * ─────────────────────────────────────────────────────────────────
+ * [v3.1 변경사항] 폰트 불일치 수정
+ * ─────────────────────────────────────────────────────────────────
  *
- *   Body: { emotionScores, spotIndex, reply?, size? }
- *   → generateCardPNG({ spotIndex, ... })
+ *   Body에 dominantEmotion 필드 추가 수신.
+ *   유효성 검증 후 generateCardPNG에 전달.
+ *   png-exporter.js가 이 값으로 폰트를 직접 결정 → 화면 폰트와 일치.
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * [방안D] 정적 경승지 이미지(ulsan_scene_XX.jpg) 기반
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   Body: { emotionScores, spotIndex, reply?, size?, dominantEmotion? }
+ *   → generateCardPNG({ spotIndex, emotionScores, dominantEmotion, ... })
  *   → assets/scenes/ulsan_scene_XX.jpg 읽기 → PNG 합성 → 저장
  */
 
@@ -19,12 +30,17 @@ import { generateCardPNG } from '../../svg-engine/index.js';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || './output';
 const router     = Router();
 
-// ── 검증 헬퍼 ────────────────────────────────────────────────────
+// =============================================================================
+// ① 검증 헬퍼
+// =============================================================================
 
 const EMOTION_KEYS = [
   'amazement','peace','vitality','nostalgia',
   'freshness','grandeur','warmth','mystery',
 ];
+
+// [v3.1] 유효한 dominant 감성 키 목록
+const VALID_DOMINANT_EMOTIONS = new Set(EMOTION_KEYS);
 
 function validateEmotionScores(scores) {
   if (!scores || typeof scores !== 'object') {
@@ -55,10 +71,13 @@ function sanitizeReply(reply) {
   };
 }
 
-// ── POST /api/card ────────────────────────────────────────────────
+// =============================================================================
+// ② POST /api/card
+// =============================================================================
 
 router.post('/', async (req, res) => {
-  const { emotionScores, spotIndex, reply, size } = req.body;
+  // [v3.1] dominantEmotion 추가 수신
+  const { emotionScores, spotIndex, reply, size, dominantEmotion } = req.body;
 
   // 1. 검증
   const scoreResult = validateEmotionScores(emotionScores);
@@ -74,18 +93,25 @@ router.post('/', async (req, res) => {
   const cleanReply = sanitizeReply(reply);
   const outputSize = Math.min(Math.max(parseInt(size, 10) || 1200, 400), 2400);
 
-  // 2. 정적 이미지 → PNG 합성
+  // [v3.1] dominantEmotion 검증
+  // 유효한 감성 키이면 사용, 아니면 null → png-exporter가 emotionScores로 폴백
+  const safeDominant = typeof dominantEmotion === 'string' && VALID_DOMINANT_EMOTIONS.has(dominantEmotion)
+    ? dominantEmotion
+    : null;
+
+  // 2. PNG 합성
   const fileName   = `${uuidv4()}.png`;
   const outputPath = path.join(OUTPUT_DIR, fileName);
 
   let savedPath;
   try {
     savedPath = await generateCardPNG({
-      emotionScores: scoreResult.cleaned,
-      spotIndex:     spotResult.cleaned,
+      emotionScores:   scoreResult.cleaned,
+      spotIndex:       spotResult.cleaned,
       outputPath,
-      size:          outputSize,
-      reply:         cleanReply,
+      size:            outputSize,
+      reply:           cleanReply,
+      dominantEmotion: safeDominant,    // [v3.1] 추가 전달
     });
   } catch (err) {
     console.error('[card] PNG 생성 실패:', err.message);
@@ -93,7 +119,10 @@ router.post('/', async (req, res) => {
   }
 
   // 3. 응답
-  console.log(`[card] 생성 완료: ${fileName} (${outputSize}px, spot:${spotResult.cleaned})`);
+  console.log(
+    `[card] 생성 완료: ${fileName}` +
+    ` (${outputSize}px, spot:${spotResult.cleaned}, font:${safeDominant ?? 'auto'})`
+  );
   return res.json({
     downloadUrl: `/output/${path.basename(savedPath)}`,
     fileName,
