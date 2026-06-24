@@ -17,6 +17,26 @@
  *   - ttfPath  : assets/ 기준 TTF 파일명 (서버 PNG 렌더링용)
  *   - googleFontUrl : 화면용 Google Fonts CDN URL
  */
+/**
+ * 동점(tie) 발생 시 우선순위 순서.
+ * 브라우저(app.js)와 서버(png-exporter.js) 양쪽에서 이 배열을 import하여
+ * dominant 감성 선택 결과를 항상 일치시킨다.
+ *
+ * 우선순위 기준:
+ *   - 울산 12경의 대표 감성(amazement·peace)을 앞에 배치
+ *   - 시각적으로 차별화가 뚜렷한 폰트일수록 우선 표현
+ */
+export const EMOTION_PRIORITY = [
+  'amazement',  // 1순위 — 경이 (Hahmlet, 가장 강렬한 감성)
+  'mystery',    // 2순위 — 신비 (Single Day, 독특한 개성)
+  'grandeur',   // 3순위 — 웅장 (Gugi, 묵직한 위엄)
+  'nostalgia',  // 4순위 — 향수 (Gaegu, 손글씨 개성)
+  'warmth',     // 5순위 — 따뜻함 (Nanum Pen Script)
+  'vitality',   // 6순위 — 활기 (Jua)
+  'freshness',  // 7순위 — 청량 (IBM Plex Sans KR)
+  'peace',      // 8순위 — 평화 (Stylish, 가장 중성적)
+];
+
 export const EMOTION_FONT_MAP = Object.freeze({
   amazement: {
     family:        'Hahmlet',
@@ -77,19 +97,20 @@ export const FALLBACK_FONT = EMOTION_FONT_MAP.warmth;
  */
 export function pickFontByEmotion(emotionScores) {
   if (!emotionScores || typeof emotionScores !== 'object') {
-    return { emotion: 'warmth', font: FALLBACK_FONT };
+    return { emotion: 'amazement', font: EMOTION_FONT_MAP.amazement };
   }
 
-  let maxKey   = 'warmth';
+  // 1단계: 최고 점수 탐색
   let maxValue = -1;
-
-  for (const key of Object.keys(EMOTION_FONT_MAP)) {
+  for (const key of EMOTION_PRIORITY) {
     const v = Number(emotionScores[key]) || 0;
-    if (v > maxValue) {
-      maxValue = v;
-      maxKey   = key;
-    }
+    if (v > maxValue) maxValue = v;
   }
+
+  // 2단계: 동점 시 EMOTION_PRIORITY 우선순위로 첫 번째 선택
+  const maxKey = EMOTION_PRIORITY.find(
+    (key) => (Number(emotionScores[key]) || 0) === maxValue
+  ) ?? 'amazement';
 
   return {
     emotion: maxKey,
