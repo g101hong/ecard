@@ -1,45 +1,22 @@
 /**
  * @fileoverview svg-engine/png-exporter.js
  * @description  정적 경승지 이미지(JPG) → PNG 변환 + 답글 카드 합성
- * @version 2.1.0  [v3.1] dominantEmotion 직접 사용 — 폰트 불일치 수정
+ * @version 2.2.0  [v3.2] dominantEmotion 필수화 — 폴백 제거
  *
  * ─────────────────────────────────────────────────────────────────
- * [v3.1 변경사항] 폰트 불일치 수정
+ * [v3.2 변경사항] dominantEmotion 항상 사용, emotionScores 폴백 제거
  * ─────────────────────────────────────────────────────────────────
  *
- *   resolveFontFamily(emotionScores, dominantEmotion?)
- *     dominantEmotion이 있으면 → EMOTION_FONT_MAP[dominantEmotion] 직접 사용
- *     없으면 → 기존 pickFontByEmotion(emotionScores) 폴백
- *
- *   buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion?)
- *     dominantEmotion 파라미터 추가 전달
- *
- *   composeCardPNG(imageBuffer, outputPath, size, reply, emotionScores, dominantEmotion?)
- *     dominantEmotion 파라미터 추가
- *
- *   generateCardPNG({ ..., dominantEmotion? })
- *     dominantEmotion 수신 및 composeCardPNG에 전달
+ *   resolveFontFamily(dominantEmotion):
+ *     - emotionScores 파라미터 제거
+ *     - dominantEmotion만 받아서 폰트 결정
+ *     - card.js가 항상 확정된 dominantEmotion을 전달하므로 폴백 불필요
+ *     - dominantEmotion이 EMOTION_FONT_MAP에 없는 경우만 FALLBACK_FONT 사용
  *
  * ─────────────────────────────────────────────────────────────────
+ * [v3.1 변경사항] dominantEmotion 서버 결정값 사용
  * [방안D] 정적 이미지(JPG) → PNG 합성
  * ─────────────────────────────────────────────────────────────────
- *
- * 레이아웃:
- *   ┌──────────────────────────┐
- *   │  경승지 이미지            │  (sharp — JPG/PNG 디코딩)
- *   ├──────────────────────────┤
- *   │  답글 카드                │  (@napi-rs/canvas — TTF 직접 로드)
- *   │   ────                   │  황금 구분선
- *   │   main  감성별 폰트       │
- *   │   place 감성별 폰트       │
- *   │   ULSAN tagline           │
- *   └──────────────────────────┘
- *
- * 4색 글로우 동기화 (CSS applyGlowColors()와 1:1 대응):
- *   rg1 tertiary   → --reply-main  (우상단 방사형 빛, opacity 0.18)
- *   rg2 quaternary → --reply-sub   (좌하단 방사형 빛, opacity 0.12)
- *   rg3 primary    → --glow-primary   (상단 글로우 핵심, opacity 0.42)
- *   rg4 secondary  → --glow-secondary (상단 글로우 보조, opacity 0.30)
  */
 
 'use strict';
@@ -90,32 +67,21 @@ function ensureFonts() {
 }
 
 /**
- * 사용할 폰트 family 이름을 결정한다.
+ * [v3.2] dominantEmotion으로 폰트 family를 결정한다.
+ *        card.js가 항상 확정된 값을 전달하므로 emotionScores 재계산 불필요.
  *
- * [v3.1] dominantEmotion이 있으면 직접 사용 (재계산 없음).
- *        없으면 emotionScores로 pickFontByEmotion() 폴백.
- *
- * @param {Object|null} emotionScores
- * @param {string|null} [dominantEmotion]  서버 결정값 (우선 사용)
+ * @param {string} dominantEmotion  확정된 dominant 감성 키
  * @returns {string}  CSS font-family 값
  */
-function resolveFontFamily(emotionScores, dominantEmotion = null) {
+function resolveFontFamily(dominantEmotion) {
   ensureFonts();
 
-  let fontInfo;
+  const fontInfo = EMOTION_FONT_MAP[dominantEmotion] ?? FALLBACK_FONT;
 
-  if (dominantEmotion && EMOTION_FONT_MAP[dominantEmotion]) {
-    // [v3.1] 서버 결정값 직접 사용 — 재계산 없음
-    fontInfo = EMOTION_FONT_MAP[dominantEmotion];
-    console.log(`[png-exporter] 폰트: ${fontInfo.family} (dominantEmotion=${dominantEmotion} 직접 사용)`);
-  } else {
-    // 폴백: emotionScores로 재계산
-    const { font } = pickFontByEmotion(emotionScores);
-    fontInfo = font;
-    console.log(`[png-exporter] 폰트: ${fontInfo.family} (emotionScores 재계산)`);
+  if (_availableFonts.has(fontInfo.family)) {
+    console.log(`[png-exporter] 폰트 결정: ${fontInfo.family} (${dominantEmotion})`);
+    return fontInfo.family;
   }
-
-  if (_availableFonts.has(fontInfo.family)) return fontInfo.family;
 
   console.warn(`[png-exporter] ${fontInfo.family} 미등록 → 폴백 폰트 사용`);
   return FALLBACK_FONT.family;
@@ -224,15 +190,15 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 // =============================================================================
 
 /**
- * @param {Object}      reply
- * @param {number}      W
- * @param {Object|null} emotionScores
- * @param {string|null} [dominantEmotion]  [v3.1] 서버 결정값
+ * [v3.2] dominantEmotion만 받아 폰트 결정 (emotionScores 파라미터 제거)
+ *
+ * @param {Object} reply
+ * @param {number} W
+ * @param {string} dominantEmotion  확정된 dominant 감성 키
  * @returns {{ buf: Buffer, cardH: number }}
  */
-function buildReplyCardBuffer(reply, W, emotionScores = null, dominantEmotion = null) {
-  // [v3.1] dominantEmotion 전달
-  const fontFamily = resolveFontFamily(emotionScores, dominantEmotion);
+function buildReplyCardBuffer(reply, W, dominantEmotion) {
+  const fontFamily = resolveFontFamily(dominantEmotion);
 
   const px       = Math.round(W * CFG.PAD_X_RATIO);
   const maxTextW = W - px * 2;
@@ -313,16 +279,14 @@ function buildReplyCardBuffer(reply, W, emotionScores = null, dominantEmotion = 
 // =============================================================================
 
 /**
- * 정적 경승지 이미지(JPG) 버퍼를 PNG로 리사이즈하고 답글 카드를 합성한다.
- *
- * [v3.1] dominantEmotion 파라미터 추가.
+ * [v3.2] dominantEmotion 필수 파라미터 (emotionScores는 글로우 색상에만 사용)
  *
  * @param {Buffer}      imageBuffer
  * @param {string}      outputPath
  * @param {number}      [size=1200]
  * @param {Object|null} [reply]
- * @param {Object|null} [emotionScores]
- * @param {string|null} [dominantEmotion]  [v3.1] 서버 결정값
+ * @param {Object|null} [emotionScores]   글로우 색상 계산용 (폰트 결정 불사용)
+ * @param {string}      dominantEmotion   폰트 결정용 확정값 (필수)
  * @returns {Promise<string>}
  */
 export async function composeCardPNG(
@@ -331,7 +295,7 @@ export async function composeCardPNG(
   size            = CFG.DEFAULT_WIDTH,
   reply           = null,
   emotionScores   = null,
-  dominantEmotion = null,   // [v3.1] 추가
+  dominantEmotion,         // [v3.2] 필수 — card.js가 항상 확정값 전달
 ) {
   if (!imageBuffer?.length) throw new Error('imageBuffer가 비어있습니다.');
   if (!outputPath)          throw new Error('outputPath가 없습니다.');
@@ -355,7 +319,7 @@ export async function composeCardPNG(
   const imgW = IW ?? W;
   const imgH = IH ?? W;
 
-  // STEP 3: 감성 주색 4종 추출
+  // STEP 3: 감성 주색 4종 추출 (글로우 색상용 — 폰트와 무관)
   const colorResult = extractDominantColors(emotionScores);
   const {
     primary    = '#888888',
@@ -364,8 +328,8 @@ export async function composeCardPNG(
     quaternary = '#888888',
   } = colorResult ?? {};
 
-  // STEP 4: 텍스트 캔버스 생성 — [v3.1] dominantEmotion 전달
-  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores, dominantEmotion);
+  // STEP 4: 텍스트 캔버스 생성 — [v3.2] dominantEmotion만 전달 (emotionScores 불필요)
+  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, dominantEmotion);
 
   // STEP 5: 배경+글로우 SVG 래스터라이즈
   const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary, tertiary, quaternary);
@@ -399,17 +363,15 @@ export async function composeCardPNG(
 // =============================================================================
 
 /**
- * 경승지 이미지 읽기 → PNG 변환 → 답글 카드 합성 → 저장.
- *
- * [v3.1] dominantEmotion 파라미터 추가.
+ * [v3.2] dominantEmotion 필수 전달 — card.js가 항상 확정값을 전달함
  *
  * @param {Object} options
- * @param {Object}      options.emotionScores
- * @param {number}      options.spotIndex        0~11
- * @param {string}      options.outputPath
- * @param {number}      [options.size=1200]
+ * @param {Object}  options.emotionScores
+ * @param {number}  options.spotIndex        0~11
+ * @param {string}  options.outputPath
+ * @param {number}  [options.size=1200]
  * @param {Object|null} [options.reply]
- * @param {string|null} [options.dominantEmotion]  [v3.1] 서버 결정값
+ * @param {string}  options.dominantEmotion  확정된 dominant 감성 키 (필수)
  * @returns {Promise<string>}
  */
 export async function generateCardPNG({
@@ -418,7 +380,7 @@ export async function generateCardPNG({
   outputPath,
   size            = 1200,
   reply           = null,
-  dominantEmotion = null,   // [v3.1] 추가
+  dominantEmotion,    // [v3.2] 필수 (card.js에서 항상 확정값 전달)
 }) {
   const t0 = Date.now();
 
@@ -437,20 +399,20 @@ export async function generateCardPNG({
     throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
   }
 
-  // [v3.1] dominantEmotion 전달
   const savedPath = await composeCardPNG(
     sceneImageBuf,
     outputPath,
     size,
     reply,
     emotionScores,
-    dominantEmotion,
+    dominantEmotion,   // [v3.2] 항상 확정값
   );
 
   console.info(
     `[svg-engine] PNG 생성 완료 | ` +
     `path=${savedPath} | spotIndex=${spotIndex} | size=${size}px | ` +
-    `font=${dominantEmotion ?? 'auto'} | ${Date.now() - t0}ms`,
+    `font:${dominantEmotion}(${EMOTION_FONT_MAP[dominantEmotion]?.family ?? 'fallback'}) | ` +
+    `${Date.now() - t0}ms`,
   );
 
   return savedPath;
