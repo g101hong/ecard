@@ -256,6 +256,13 @@ async function onSubmit() {
 
     lastResult = data;
 
+    // [v3.2 fix] dominantEmotion을 lastResult에 병합
+    // _ecardColorData.dominantEmotion은 서버가 결정한 확정값.
+    // analyzeImpression() 반환 data에는 포함되지 않으므로 여기서 보완.
+    if (window._ecardColorData?.dominantEmotion) {
+      lastResult.dominantEmotion = window._ecardColorData.dominantEmotion;
+    }
+
   } catch (err) {
     console.error('[app] 분석 실패:', err);
     showError(
