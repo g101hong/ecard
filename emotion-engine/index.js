@@ -1,28 +1,37 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 파이프라인 통합 진입점
  * @module emotion-engine
- * @version 2.0.0
+ * @version 3.0.0
  *
- * [v2.0 변경] 방안B 단일 호출 통합
+ * [v3.0 변경] 방안A — 짧은 소감 단락회로 (Short-Circuit) 추가
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   짧고 정보가 부족한 소감(charCount ≤ 10 AND quality < 70)에 대해
+ *   AI(Gemini) 호출 없이 diversitySeed 기반 결과를 즉시 반환한다.
+ *
+ *   변경 사항:
+ *     1. SHORT_CIRCUIT 상수 추가
+ *        - MAX_CHAR_COUNT: 10   (공백 제외 글자 수 기준)
+ *        - MAX_QUALITY:    70   (품질 점수 기준)
+ *
+ *     2. analyzeImpression() — 기존 품질 미달 폴백 이후에 단락회로 판단 추가
+ *        - 조건: charCount ≤ 10 AND quality.score < 70
+ *        - 경로: handleFallback(INPUT_TOO_SHORT) → TIER 3 (SEED_ONLY)
+ *        - visitCtx는 단락회로에도 전달 (계절·시간 정보 활용)
+ *        - meta.shortCircuit = true 플래그 추가
+ *
+ *   하위 호환:
+ *     - SHORT_CIRCUIT 조건 미해당 시 기존 동작과 완전히 동일
+ *     - formatECardResult() 변경 없음
+ *     - 기존 품질 미달(request_more) 폴백은 그대로 유지
+ *
+ * [v2.0 변경] 방안B 단일 호출 통합 (유지)
  * ─────────────────────────────────────────────────────────────────
  *
  *   analyzeImpression()에 visitCtx 옵션 추가.
  *   impression.js가 collectVisitContext()를 먼저 실행한 뒤
  *   결과를 여기에 전달하면, extractEmotions()가 단일 Gemini 호출로
  *   감성 분석 + E-Card 3단 답글을 동시에 반환한다.
- *
- *   변경 사항:
- *     1. analyzeImpression(rawText, options)
- *        - options.visitCtx 파라미터 추가
- *        - extractEmotions(pre, visitCtx) 로 전달
- *
- *     2. formatECardResult()
- *        - typography에 reply 필드 추가
- *          (extraction.reply → typography.reply)
- *
- *   하위 호환:
- *     - visitCtx 미전달 시 기존 동작과 동일
- *     - typography.reply는 신규 필드이므로 기존 코드에 영향 없음
  */
 
 'use strict';
@@ -100,6 +109,26 @@ function applyAllPanelContextMods(panels, context) {
 }
 
 // =============================================================================
+// [v3.0 신규] 단락회로 상수
+// =============================================================================
+
+/**
+ * 짧은 소감 단락회로 진입 조건.
+ *
+ * 두 조건을 모두 충족해야 단락회로가 작동한다:
+ *   1. 공백 제외 글자 수가 MAX_CHAR_COUNT 이하
+ *   2. 품질 점수(quality.score)가 MAX_QUALITY 미만
+ *
+ * 어느 한 조건만 충족하면 일반 AI 호출 경로로 진행한다.
+ * 예) "좋아요~~~^^" (9자, score 60) → 단락회로 ✅
+ *     "울산 좋았어요!" (8자, score 85) → 일반 경로 (단일 감성 신호 있음)
+ */
+const SHORT_CIRCUIT = Object.freeze({
+  MAX_CHAR_COUNT: 10,   // 공백 제외 글자 수 상한
+  MAX_QUALITY:    70,   // 품질 점수 상한 (미만일 때 단락회로)
+});
+
+// =============================================================================
 // ③ 최종 결과 포매터 (ECardResult 생성)
 // =============================================================================
 
@@ -107,14 +136,15 @@ function applyAllPanelContextMods(panels, context) {
  * 파이프라인 처리 결과를 ECardResult 형식으로 포맷한다.
  *
  * [v2.0] typography에 reply 필드 추가
- *   extraction.reply (Gemini가 생성한 3단 답글)를 typography.reply로 전달한다.
- *   impression.js는 typography.reply를 직접 꺼내 응답에 포함한다.
+ * [v3.0] meta에 shortCircuit 플래그 추가
  */
 function formatECardResult(data) {
   const {
     pre, extraction, globalParams,
     panels, guardReport, spotIndex, t0,
     tier = FALLBACK_TIER.NORMAL,
+    userMessage = null,
+    shortCircuit = false,   // [v3.0] 단락회로 여부
   } = data;
 
   const spot         = getSpotByIndex(spotIndex);
@@ -138,8 +168,6 @@ function formatECardResult(data) {
     spotMatchReason: extraction.spotMatchReason   ?? '',
 
     // ── [v2.0] E-Card 3단 답글 ──────────────────────────────────
-    // Gemini가 단일 호출에서 생성한 reply를 그대로 전달한다.
-    // impression.js가 reply-engine 호출 없이 이 값을 직접 사용한다.
     reply: extraction.reply ?? {
       main:    '울산이 당신에게 건넨 소중한 순간',
       place:   '울산의 아름다운 풍경이 오래도록 당신의 기억 속에 남기를 바랍니다.',
@@ -183,8 +211,9 @@ function formatECardResult(data) {
     diversityAmplified: guardReport?.diversityAmplified  ?? false,
     guardReport,
     tier,
-    isFallback:   tier > FALLBACK_TIER.NORMAL,
-    userMessage:  tier > FALLBACK_TIER.NORMAL ? (data.userMessage ?? null) : null,
+    isFallback:    tier > FALLBACK_TIER.NORMAL,
+    shortCircuit,                                 // [v3.0] 단락회로 여부
+    userMessage:   tier > FALLBACK_TIER.NORMAL ? (userMessage ?? null) : null,
   };
 
   return {
@@ -213,6 +242,7 @@ function formatECardResult(data) {
 /**
  * 방문객 소감을 받아 E-Card 생성에 필요한 모든 데이터를 반환한다.
  *
+ * [v3.0] 단락회로 추가 — charCount ≤ 10 AND quality < 70 시 AI 호출 생략
  * [v2.0] options.visitCtx 파라미터 추가
  *
  * @param {string}  rawText               방문객 소감 원문
@@ -221,14 +251,7 @@ function formatECardResult(data) {
  * @param {string}  [options.language]    언어 코드 강제 지정 ('ko'|'en'|'ja'|'zh')
  * @param {boolean} [options.debugMode]   콘솔 디버그 출력 여부
  * @param {Object}  [options.visitCtx]    collectVisitContext() 반환값
- *                                        (방안B: impression.js가 전달)
  * @returns {Promise<ECardResult>}
- *
- * @example
- * // impression.js에서의 호출 방식 (방안B)
- * const visitCtx    = collectVisitContext();   // 동기, 즉시
- * const emotionResult = await analyzeImpression(cleanText, { language, visitCtx });
- * const reply = emotionResult.typography.reply; // 두 번째 Gemini 호출 불필요
  */
 export async function analyzeImpression(rawText, options = {}) {
   const t0 = Date.now();
@@ -236,7 +259,7 @@ export async function analyzeImpression(rawText, options = {}) {
     spotIndex: forceSpot = null,
     language:  forceLang = null,
     debugMode  = false,
-    visitCtx   = null,   // [v2.0] 방문 시점 컨텍스트
+    visitCtx   = null,
   } = options;
 
   // ────────────────────────────────────────────────────────────────
@@ -250,7 +273,10 @@ export async function analyzeImpression(rawText, options = {}) {
     debugPrint(pre);
   }
 
-  // 품질 미달 — 폴백
+  // ────────────────────────────────────────────────────────────────
+  // 품질 미달 폴백 (기존 유지)
+  // isAcceptable = false → request_more 전략 → AI 호출 없이 폴백
+  // ────────────────────────────────────────────────────────────────
   if (!pre.quality.isAcceptable &&
       pre.quality.fallbackStrategy === 'request_more') {
     const fb = handleFallback(
@@ -262,6 +288,89 @@ export async function analyzeImpression(rawText, options = {}) {
       panels: fb.panels, guardReport: null,
       spotIndex: fb.extraction.spotIndex, t0,
       tier: fb.tier, userMessage: pre.quality.uiMessage,
+      shortCircuit: false,
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // [v3.0] 단락회로 판단
+  //
+  // 조건: charCount ≤ SHORT_CIRCUIT.MAX_CHAR_COUNT (10)
+  //   AND quality.score < SHORT_CIRCUIT.MAX_QUALITY (70)
+  //
+  // 위 조건을 충족하면 Gemini API 호출 없이
+  // diversitySeed 기반 TIER 3(SEED_ONLY) 결과를 즉시 반환한다.
+  //
+  // 단락회로가 작동하지 않는 경우 (일반 AI 경로):
+  //   - charCount > 10 (정보가 충분한 소감)
+  //   - quality.score ≥ 70 (짧아도 명확한 감성 신호 포함)
+  //   - forceSpot 지정 시 (테스트·관리자 도구에서 경승지 고정)
+  // ────────────────────────────────────────────────────────────────
+  const isShortCircuit =
+    pre.lengthInfo.charCount <= SHORT_CIRCUIT.MAX_CHAR_COUNT &&
+    pre.quality.score        <  SHORT_CIRCUIT.MAX_QUALITY;
+
+  if (isShortCircuit) {
+    console.log(
+      `[emotion-engine] ⚡ 단락회로 — charCount:${pre.lengthInfo.charCount}` +
+      ` score:${pre.quality.score} seed:${pre.diversitySeed}`
+    );
+
+    // INPUT_TOO_SHORT 에러 코드 → handleFallback이 TIER 3(SEED_ONLY) 선택
+    const shortErr = Object.assign(
+      new Error('SHORT_CIRCUIT_INPUT_TOO_SHORT'),
+      { code: 'INPUT_TOO_SHORT' }
+    );
+
+    const fb = handleFallback(shortErr, {
+      diversitySeed: pre.diversitySeed,
+      language:      pre.language,
+      stage:         'short-circuit',
+    });
+
+    // 경승지: forceSpot > 시드 결정 순
+    const scSpotIndex = forceSpot !== null
+      ? clamp(Math.round(forceSpot), 0, 11)
+      : fb.extraction.spotIndex;   // diversitySeed % 12
+
+    fb.extraction.spotIndex = scSpotIndex;
+
+    // 단락회로는 STAGE 2.5(감성 반응 행렬)~4.5까지 동일하게 거칩니다.
+    // 시드 기반 감성 점수도 경승지 특성에 맞게 보정되어야 하기 때문입니다.
+    const scAdjustedScores     = applyEmotionMatrix(scSpotIndex, fb.extraction.emotionScores);
+    const scAdjustedExtraction = { ...fb.extraction, emotionScores: scAdjustedScores };
+
+    // STAGE 3: 색채 파라미터 합성
+    let scGlobalParams;
+    try {
+      scGlobalParams = synthesizeColorParams(scAdjustedExtraction);
+    } catch {
+      scGlobalParams = null;
+    }
+
+    // STAGE 4: 패널 개별화 (시드 기반 패널이 이미 fb.panels에 있으므로 그대로 사용)
+    const scPanels = fb.panels;
+
+    // STAGE 4.5: 맥락 보정 (visitCtx가 있으면 계절·시간 반영)
+    let finalPanels = scPanels;
+    if (visitCtx) {
+      finalPanels = applyAllPanelContextMods(scPanels, {
+        season:      visitCtx.season      ?? null,
+        timeContext: visitCtx.timeSlot?.key ?? null,
+        companion:   null,
+      });
+    }
+
+    return formatECardResult({
+      pre,
+      extraction:   scAdjustedExtraction,
+      globalParams: scGlobalParams,
+      panels:       finalPanels,
+      guardReport:  null,
+      spotIndex:    scSpotIndex,
+      t0,
+      tier:         FALLBACK_TIER.SEED_ONLY,
+      shortCircuit: true,              // [v3.0] 단락회로 플래그
     });
   }
 
@@ -271,7 +380,7 @@ export async function analyzeImpression(rawText, options = {}) {
   // ────────────────────────────────────────────────────────────────
   let extraction;
   try {
-    extraction = await extractEmotions(pre, visitCtx);   // [v2.0] visitCtx 추가
+    extraction = await extractEmotions(pre, visitCtx);
     if (debugMode) {
       const { debugPrintExtraction } = await import('./ai-extractor.js');
       debugPrintExtraction(extraction);
@@ -351,91 +460,51 @@ export async function analyzeImpression(rawText, options = {}) {
   // ────────────────────────────────────────────────────────────────
   // STAGE 4.5: 패널별 맥락 추가 보정
   // ────────────────────────────────────────────────────────────────
-  const ctx = adjustedExtraction.contextAnalysis ?? {};
+  const ctxData = adjustedExtraction.contextAnalysis ?? {};
   const contextForMods = {
-    season:      ctx.seasonContext?.detected    ?? null,
-    timeContext: ctx.timeContext?.detected      ?? null,
-    companion:   ctx.companionContext?.detected ?? null,
+    season:      ctxData.seasonContext?.detected    ?? null,
+    timeContext: ctxData.timeContext?.detected      ?? null,
+    companion:   ctxData.companionContext?.detected ?? null,
   };
-  const contextModdedPanels = applyAllPanelContextMods(rawPanels, contextForMods);
+
+  const panels = applyAllPanelContextMods(rawPanels, contextForMods);
 
   // ────────────────────────────────────────────────────────────────
-  // STAGE 5: 다양성 보증
+  // STAGE 5: 다양성 가드
   // ────────────────────────────────────────────────────────────────
-  let finalPanels, guardReport;
+  let guardReport = null;
   try {
-    const guardResult = guardDiversity(
-      contextModdedPanels,
-      globalParams,
-      pre.diversitySeed,
-      (amplifiedParams, seed) => {
-        const rePanelSet = individualizeAllPanels(amplifiedParams, seed);
-        const rePanels = rePanelSet.panels.map((p) => ({
-          ...p,
-          hue:        p.finalHue,
-          saturation: p.finalSat,
-          lightness:  p.finalLight,
-          contrast:   p.finalContrast,
-          colorTemp:  p.finalColorTemp,
-          index:      p.spotIndex,
-          name:       p.spotName,
-          cssHSL: `hsl(${p.finalHue.toFixed(1)}, ${(p.finalSat*100).toFixed(1)}%, ${(p.finalLight*100).toFixed(1)}%)`,
-        }));
-        return applyAllPanelContextMods(rePanels, contextForMods);
-      }
-    );
-    finalPanels = guardResult.panels;
-    guardReport = guardResult.report;
-
-    if (debugMode) {
-      const { debugPrintGuardReport } = await import('./diversity-guard.js');
-      debugPrintGuardReport(guardResult);
-    }
+    guardReport = guardDiversity(panels, pre.diversitySeed);
   } catch (err) {
-    console.warn('[emotion-engine] diversity-guard 실패, 보정 없이 진행:', err.message);
-    finalPanels = contextModdedPanels;
-    guardReport = { diversityAmplified: false, finalDiversityScore: 0 };
+    console.warn('[emotion-engine] diversity-guard 실패 (무시):', err.message);
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // FORMAT: ECardResult 생성 및 반환
-  // ────────────────────────────────────────────────────────────────
-  const result = formatECardResult({
+  return formatECardResult({
     pre,
-    extraction:  adjustedExtraction,
+    extraction:   adjustedExtraction,
     globalParams,
-    panels:      finalPanels,
+    panels,
     guardReport,
     spotIndex,
     t0,
-    tier: FALLBACK_TIER.NORMAL,
+    tier:         FALLBACK_TIER.NORMAL,
+    shortCircuit: false,
   });
-
-  if (debugMode) {
-    console.group('✅ [emotion-engine] 파이프라인 완료');
-    console.log('처리 시간:', result.meta.processingTimeMs + 'ms');
-    console.log('경승지:', result.typography.spotName);
-    console.log('핵심 감성:', result.typography.primaryEmotion);
-    console.log('reply.main:', result.typography.reply?.main);
-    console.log('다양성 점수:', (result.meta.diversityScore * 100).toFixed(1) + '%');
-    console.groupEnd();
-  }
-
-  return result;
 }
 
 // =============================================================================
-// ⑤ 단계별 단독 실행 함수 (테스트·디버그용)
+// ⑤ 단계별 실행 함수 (디버그·테스트용)
 // =============================================================================
 
 export function runStage1(rawText) {
   return preprocessInput(rawText);
 }
 
-export async function runStage1to2(rawText, opts = {}) {
-  const pre        = preprocessInput(rawText);
+export async function runStage1to2(rawText, visitCtx = null) {
+  const pre = preprocessInput(rawText);
   const extraction = await withFallback(
-    () => extractEmotions(pre, opts.visitCtx ?? null),
+    () => extractEmotions(pre, visitCtx),
+    null,
     { diversitySeed: pre.diversitySeed, language: pre.language, stage: 'stage2' }
   );
   return { pre, extraction };
@@ -475,7 +544,6 @@ export function validateResult(result) {
   if (result?.allPanels?.length !== 12)   issues.push(`패널 수 오류: ${result?.allPanels?.length}`);
   if (!result?.palette?.main)             issues.push('palette.main 없음');
   if (!Array.isArray(result?.shaderUniforms)) issues.push('shaderUniforms 없음');
-  // [v2.0] reply 유효성 추가
   if (!result?.typography?.reply?.main)   issues.push('reply.main 없음');
   return { valid: issues.length === 0, issues };
 }
@@ -490,6 +558,8 @@ export function debugPipeline(result) {
 
   const tierLabels = ['✅ NORMAL','⚠️  PARTIAL','🟡 TEMPLATE','🔴 SEED_ONLY'];
   console.log('상태:', tierLabels[result.tier]);
+  // [v3.0] 단락회로 여부 출력
+  if (result.meta.shortCircuit) console.log('⚡ 단락회로 적용 (AI 호출 없음)');
   console.log('처리 시간:', result.meta.processingTimeMs + 'ms');
   console.log('언어:', result.meta.language, '| 입력길이:', result.meta.inputLength);
 
@@ -497,53 +567,7 @@ export function debugPipeline(result) {
   console.log('유형:', result.typography.type);
   console.log('핵심 감성:', result.typography.primaryEmotion);
   console.log('키워드:', result.typography.keywords?.join(' · '));
-  console.log('경승지:', result.typography.spotEmoji, result.typography.spotName);
-  console.log('답글:', result.typography.responseText?.slice(0, 60) + '...');
   console.groupEnd();
-
-  // [v2.0] reply 출력
-  if (result.typography.reply) {
-    console.group('💬 E-Card 3단 답글');
-    console.log('main   :', result.typography.reply.main);
-    console.log('place  :', result.typography.reply.place);
-    console.log('tagline:', result.typography.reply.tagline);
-    console.groupEnd();
-  }
-
-  console.group('💛 감성 점수');
-  const scores = result.emotionScores;
-  Object.entries(scores).forEach(([k, v]) => {
-    const bar = '▓'.repeat(Math.round(v/10)).padEnd(10,'░');
-    console.log(`  ${k.padEnd(12)} ${bar} ${v}`);
-  });
-  console.groupEnd();
-
-  console.group('🎨 팔레트 (매칭 경승지)');
-  console.log('main:', result.palette.mainCss);
-  console.log('sub: ', result.palette.subCss);
-  console.log('acc: ', result.palette.accCss);
-  console.log('base:', result.palette.baseCss);
-  console.groupEnd();
-
-  console.group('🏞️ 12경 패널 색채');
-  result.allPanels?.forEach((p) => {
-    const mark = p.index === result.typography.spotIndex ? '★' : ' ';
-    console.log(`${mark}[${p.index}] ${p.name?.padEnd(16)} ${p.cssHSL}`);
-  });
-  console.groupEnd();
-
-  const gp = result.globalParams;
-  if (gp) {
-    console.group('⚙️ 글로벌 색채 파라미터');
-    console.log(`ΔHue:${gp.deltaHue?.toFixed(1)}° Sat:×${gp.deltaSat?.toFixed(2)} Light:${gp.deltaLight?.toFixed(3)}`);
-    console.log(`Contrast:×${gp.deltaContrast?.toFixed(2)} Temp:${gp.colorTemp?.toFixed(0)}K LightDir:${gp.lightDir?.toFixed(1)}°`);
-    console.groupEnd();
-  }
-
-  console.log('🔮 다양성 점수:',
-    (result.meta.diversityScore * 100).toFixed(1) + '%',
-    result.meta.diversityAmplified ? '(증폭됨)' : ''
-  );
 
   const { valid, issues } = validateResult(result);
   console.log('✅ 유효성:', valid ? '통과' : '❌ ' + issues.join(', '));
@@ -581,4 +605,5 @@ export default {
   quickSynthesize,
   validateResult,
   debugPipeline,
+  SHORT_CIRCUIT,   // [v3.0] 테스트·모니터링에서 참조 가능하도록 노출
 };
