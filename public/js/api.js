@@ -1,48 +1,19 @@
 /**
  * @fileoverview 울산 E-Card — 서버 API fetch 래퍼
  * @module public/js/api
- * @version 2.0.0  [방안C] SSE 스트리밍 수신
+ * @version 2.1.0  [v3.1] dominantEmotion 전달 추가
  *
  * ─────────────────────────────────────────────────────────────────
- * [방안C 변경사항]
+ * [v3.1 변경사항] 폰트 불일치 수정
  * ─────────────────────────────────────────────────────────────────
  *
- *   analyzeImpression(text, options)의 인터페이스는 그대로 유지한다.
- *   내부적으로 fetch + ReadableStream으로 SSE를 수신하며,
- *   options.onColors / options.onReply 콜백으로 단계별 데이터를
- *   app.js에 전달한다.
- *
- *   app.js 변경 최소화:
- *     기존: const data = await analyzeImpression(text, options)
- *     변경: const data = await analyzeImpression(text, {
- *              ...options,
- *              onColors: (colorsData) => { /* SVG 즉시 적용 *\/ },
- *              onReply:  (replyData)  => { /* 답글 렌더 *\/ },
- *           })
- *     resolve 값은 colors + reply를 합친 완전한 객체 (기존과 동일)
+ *   1. SSE colors 이벤트 수신 시 dominantEmotion을 accumulated에 저장
+ *   2. requestCard() 파라미터에 dominantEmotion 추가
+ *   3. /api/card POST body에 dominantEmotion 포함
  *
  * ─────────────────────────────────────────────────────────────────
- * SSE 수신 방식 — fetch + ReadableStream
+ * [방안C 변경사항] SSE 스트리밍 수신
  * ─────────────────────────────────────────────────────────────────
- *
- *   EventSource는 GET만 지원하므로 POST body를 보낼 수 없다.
- *   fetch의 response.body(ReadableStream)를 직접 읽어 SSE를 파싱한다.
- *
- *   수신 이벤트:
- *     event: colors  → onColors(data) 콜백 즉시 호출
- *     event: reply   → onReply(data)  콜백 즉시 호출
- *     event: done    → Promise resolve
- *     event: error   → Promise reject
- *
- * ─────────────────────────────────────────────────────────────────
- * 오류 처리
- * ─────────────────────────────────────────────────────────────────
- *
- *   SSE 연결 전 HTTP 오류 (400 등)     → ApiError throw (즉시)
- *   SSE 스트림 중 error 이벤트         → ApiError throw
- *   SSE 스트림 중 네트워크 단절        → ApiError throw
- *   타임아웃 (IMPRESSION_TIMEOUT_MS)   → ApiError throw
- *   onColors / onReply 콜백 내부 예외  → 콘솔 경고 후 무시 (UI 깨짐 방지)
  */
 
 'use strict';
@@ -52,16 +23,9 @@
 // =============================================================================
 
 const API_CONFIG = Object.freeze({
-  /**
-   * /api/impression SSE 타임아웃 (ms)
-   * Gemini 1회 호출 기준 최대 20초 + 여유
-   */
   IMPRESSION_TIMEOUT_MS: 35_000,
-
-  /** /api/card 타임아웃 (ms) */
-  CARD_TIMEOUT_MS: 20_000,
-
-  CONTENT_TYPE: 'application/json',
+  CARD_TIMEOUT_MS:       20_000,
+  CONTENT_TYPE:          'application/json',
 });
 
 // =============================================================================
@@ -81,17 +45,6 @@ export class ApiError extends Error {
 // ③ SSE 파서 — ReadableStream → 이벤트 객체
 // =============================================================================
 
-/**
- * fetch response.body(ReadableStream)를 읽어 SSE 이벤트를 파싱한다.
- *
- * SSE 규격: "event: name\ndata: json\n\n" 형식의 텍스트 스트림.
- * TextDecoder + 줄 단위 파싱으로 구현한다.
- *
- * @param {ReadableStream} body          fetch response.body
- * @param {AbortController} controller   타임아웃 제어
- * @param {function} onEvent             ({ event, data }) 콜백
- * @returns {Promise<void>}
- */
 async function _readSSEStream(body, controller, onEvent) {
   const reader  = body.getReader();
   const decoder = new TextDecoder('utf-8');
@@ -104,9 +57,7 @@ async function _readSSEStream(body, controller, onEvent) {
 
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE는 "\n\n"으로 이벤트 경계를 구분한다
       const blocks = buffer.split('\n\n');
-      // 마지막 불완전한 블록은 버퍼에 남긴다
       buffer = blocks.pop() ?? '';
 
       for (const block of blocks) {
@@ -135,7 +86,7 @@ async function _readSSEStream(body, controller, onEvent) {
     }
   } finally {
     reader.releaseLock();
-    controller.abort(); // 타임아웃 타이머 해제
+    controller.abort();
   }
 }
 
@@ -151,39 +102,14 @@ async function _readSSEStream(body, controller, onEvent) {
  *   reply  이벤트 수신 즉시 options.onReply(replyData)  호출.
  *   done   이벤트 수신 시  Promise resolve (합친 객체 반환).
  *
- * @param {string} text       방문객 소감 원문 (8자 이상)
+ * @param {string} text
  * @param {Object} [options]
  * @param {string}   [options.language='ko']
  * @param {string}   [options.tripDuration]
  * @param {string}   [options.companion]
- * @param {function} [options.onColors]   Phase1 콜백 — SVG 색채 즉시 적용용
- *   @param {Object} colorsData
- *   @param {number} colorsData.spotIndex
- *   @param {string} colorsData.spotName
- *   @param {Object} colorsData.emotionScores
- *   @param {string} colorsData.colorTempFilter
- *   @param {number} colorsData.diversitySeed
- * @param {function} [options.onReply]    Phase2 콜백 — 답글 카드 렌더용
- *   @param {Object} replyData
- *   @param {Object} replyData.reply  { main, place, tagline }
- *   @param {string} replyData.primaryEmotion
- *   @param {string[]} replyData.keywords
- * @returns {Promise<Object>}  colors + reply 합친 완전한 응답 객체
- * @throws  {ApiError}
- *
- * @example
- * const data = await analyzeImpression(text, {
- *   tripDuration: '2n3d',
- *   companion: 'couple',
- *   onColors: (d) => {
- *     applyDeltaColorsToSVG(d.emotionScores, d.diversitySeed);
- *     revealSVG();
- *   },
- *   onReply: (d) => {
- *     renderResult(d);
- *   },
- * });
- * // data.emotionScores, data.reply, data.spotIndex 등 사용 가능
+ * @param {function} [options.onColors]
+ * @param {function} [options.onReply]
+ * @returns {Promise<Object>}
  */
 export async function analyzeImpression(text, options = {}) {
   if (typeof text !== 'string' || text.trim().length < 8) {
@@ -194,17 +120,13 @@ export async function analyzeImpression(text, options = {}) {
     language     = 'ko',
     tripDuration = null,
     companion    = null,
-    onColors     = null,   // [방안C] Phase1 콜백
-    onReply      = null,   // [방안C] Phase2 콜백
+    onColors     = null,
+    onReply      = null,
   } = options;
 
   const controller = new AbortController();
-  const timerId    = setTimeout(
-    () => controller.abort(),
-    API_CONFIG.IMPRESSION_TIMEOUT_MS,
-  );
+  const timerId    = setTimeout(() => controller.abort(), API_CONFIG.IMPRESSION_TIMEOUT_MS);
 
-  // ── fetch — SSE 스트림 연결 ──────────────────────────────────────
   let res;
   try {
     res = await fetch('/api/impression', {
@@ -221,7 +143,6 @@ export async function analyzeImpression(text, options = {}) {
     throw new ApiError('네트워크 연결을 확인해주세요.', 0, true);
   }
 
-  // SSE 연결 전 HTTP 오류 처리 (400 Bad Request 등)
   if (!res.ok) {
     clearTimeout(timerId);
     let serverMessage = '';
@@ -234,21 +155,19 @@ export async function analyzeImpression(text, options = {}) {
     );
   }
 
-  // ── SSE 스트림 수신 및 이벤트 처리 ─────────────────────────────
-  const accumulated = {};   // colors + reply 데이터를 누적
+  const accumulated = {};
 
   return new Promise((resolve, reject) => {
     _readSSEStream(res.body, controller, ({ event, data }) => {
 
       if (event === 'colors') {
-        // Phase 1: 색상 데이터 수신
-        // → onColors 콜백 즉시 호출 (SVG 색채 전환 트리거)
         Object.assign(accumulated, {
-          spotIndex:       data.spotIndex,
-          spotName:        data.spotName,
-          emotionScores:   _sanitizeEmotionScores(data.emotionScores),
-          colorTempFilter: data.colorTempFilter ?? null,
-          diversitySeed:   data.diversitySeed   ?? 0,
+          spotIndex:        data.spotIndex,
+          spotName:         data.spotName,
+          emotionScores:    _sanitizeEmotionScores(data.emotionScores),
+          colorTempFilter:  data.colorTempFilter  ?? null,
+          diversitySeed:    data.diversitySeed    ?? 0,
+          dominantEmotion:  data.dominantEmotion  ?? 'amazement',  // [v3.1] 추가
         });
 
         if (typeof onColors === 'function') {
@@ -259,8 +178,6 @@ export async function analyzeImpression(text, options = {}) {
       }
 
       else if (event === 'reply') {
-        // Phase 2: 답글 데이터 수신
-        // → onReply 콜백 즉시 호출 (답글 카드 렌더 트리거)
         const replyPayload = {
           reply:          _sanitizeReply(data.reply),
           primaryEmotion: data.primaryEmotion || '울산의 감동',
@@ -277,13 +194,11 @@ export async function analyzeImpression(text, options = {}) {
       }
 
       else if (event === 'done') {
-        // 스트림 종료 — 합친 객체로 resolve
         clearTimeout(timerId);
         resolve(accumulated);
       }
 
       else if (event === 'error') {
-        // 서버 측 오류 이벤트
         clearTimeout(timerId);
         reject(new ApiError(
           data.message || '감성 분석 중 오류가 발생했습니다.',
@@ -304,22 +219,28 @@ export async function analyzeImpression(text, options = {}) {
 }
 
 // =============================================================================
-// ⑤ /api/card — 기존 JSON POST 유지
+// ⑤ /api/card — PNG 저장 요청
 // =============================================================================
 
 /**
  * E-Card PNG 생성을 요청한다.
  *
- * [방안D 변경] spotIndex(emotion-engine 인덱스, 0~11)를 함께 전송한다.
- * 서버가 이 값으로 assets/scenes/ulsan_scene_XX.jpg 정적 이미지를
- * 찾아 답글 카드와 합성한다 (더 이상 SVG 패치를 사용하지 않음).
+ * [v3.1] dominantEmotion 파라미터 추가.
+ *        서버가 이 값으로 폰트를 직접 결정하여 화면 폰트와 일치시킨다.
  *
  * @param {Object}      emotionScores
  * @param {Object|null} [reply]
- * @param {number}      spotIndex   0~11 (emotion-engine 인덱스, 필수)
+ * @param {number}      spotIndex         0~11
  * @param {number}      [size=1200]
+ * @param {string|null} [dominantEmotion] 서버 결정 dominant 감성 키 [v3.1]
  */
-export async function requestCard(emotionScores, reply = null, spotIndex, size = 1200) {
+export async function requestCard(
+  emotionScores,
+  reply          = null,
+  spotIndex,
+  size           = 1200,
+  dominantEmotion = null,   // [v3.1] 추가
+) {
   if (!emotionScores || typeof emotionScores !== 'object') {
     throw new ApiError('감성 데이터가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
   }
@@ -338,9 +259,10 @@ export async function requestCard(emotionScores, reply = null, spotIndex, size =
       headers: { 'Content-Type': API_CONFIG.CONTENT_TYPE },
       body:    JSON.stringify({
         emotionScores,
-        reply: reply ?? null,
+        reply:           reply ?? null,
         spotIndex,
-        size:  Math.min(Math.max(size, 400), 2400),
+        size:            Math.min(Math.max(size, 400), 2400),
+        dominantEmotion: dominantEmotion ?? null,   // [v3.1] 추가
       }),
     });
   } catch (err) {

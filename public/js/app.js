@@ -1,30 +1,21 @@
 /**
  * @fileoverview 울산 E-Card — 프론트엔드 앱 진입점
- * @version 6.0.0  [방안D] 정적 경승지 이미지 표시로 전환
+ * @version 6.1.0  [v3.1] 폰트 불일치 수정 — dominantEmotion 서버 결정값 사용
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * [v3.1 변경사항] 폰트 불일치 수정
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   기존: applyDominantFont(emotionScores) → 클라이언트에서 dominant 재계산
+ *   변경: applyDominantFont(dominantEmotion) → 서버 결정값 직접 사용
+ *
+ *   서버(impression.js)가 SSE colors 이벤트에 dominantEmotion을 포함하여 전송.
+ *   app.js는 이 값을 window._ecardColorData.dominantEmotion으로 저장 후
+ *   renderResultFromReply()에서 applyDominantFont()에 직접 전달.
+ *   onSave()에서도 dominantEmotion을 requestCard()에 전달하여 PNG 폰트 일치.
  *
  * ─────────────────────────────────────────────────────────────────
  * [방안D 변경사항] SVG 패널 색채 패칭 → 정적 ulsan_scene 이미지 표시
- * ─────────────────────────────────────────────────────────────────
- *
- *   기존 (SVG 패널 ID 기반 색채 패칭, v5.0.0):
- *     loadSVG()                                   // 초기화 시 1회
- *     applyDeltaColorsToSVG(scores, seed)          // SVG 색상 패치
- *     revealSVG()                                  // 블러 해제
- *     resetSVG()                                   // 원본 SVG로 복원
- *
- *   방안D (AI 분석 spotIndex → 정적 이미지, v6.0.0):
- *     showSceneImage(spotIndex)                    // ulsan_scene_XX 표시
- *     revealSceneImage()                           // 블러 해제
- *     resetSceneImage()                            // 이미지 초기화
- *
- *   SVG 색채 패칭 코드를 사용하지 않으므로 svg-renderer.js import를
- *   scene-image.js로 교체했다. (svg-renderer.js / color-engine.js는
- *   서버사이드 PNG 생성(svg-engine) 경로와는 무관하며, 파일 자체는
- *   하위 호환을 위해 보존하되 app.js에서는 더 이상 참조하지 않는다.)
- *
- *   analyzeImpression()의 SSE 2단계 콜백 구조(onColors/onReply)는
- *   그대로 유지된다 — colorsData.spotIndex만 새로 활용한다.
- *
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -41,8 +32,7 @@ import { showSceneImage,
 import { analyzeImpression,
          requestCard }     from './api.js';
 
-// emotion-colors는 svg-engine 경로이므로 클라이언트에서는 인라인 구현
-// (빌드 도구 없으므로 서버 모듈을 직접 import 불가 — 동일 로직을 인라인 선언)
+// emotion-colors — 서버 모듈 직접 import 불가 (빌드 도구 없음) → 인라인 구현
 const EMOTION_BASE_COLOR = {
   amazement: { h: 42,  s: 0.90, l: 0.58 },
   peace:     { h: 200, s: 0.45, l: 0.62 },
@@ -53,11 +43,6 @@ const EMOTION_BASE_COLOR = {
   warmth:    { h: 30,  s: 0.80, l: 0.60 },
   mystery:   { h: 270, s: 0.55, l: 0.42 },
 };
-
-// 답글화면 이미지저장 폰트 일치 VALID_EMOTIONS 상수 추가
-const VALID_EMOTIONS = new Set([
-  'amazement', 'mystery', 'grandeur', 'nostalgia', 'warmth',    'vitality', 'freshness', 'peace',
-]);
 
 function _hsl(h, s, l) {
   const a = s * Math.min(l, 1 - l);
@@ -91,12 +76,21 @@ function extractDominantColors(emotionScores) {
   });
   return {
     colors,
-    primary:     colors[0].mid,
-    secondary:   colors[1]?.mid ?? colors[0].mid,
-    tertiary:    colors[2]?.mid ?? colors[0].mid,
-    quaternary:  colors[3]?.mid ?? colors[0].mid,
+    primary:    colors[0].mid,
+    secondary:  colors[1]?.mid ?? colors[0].mid,
+    tertiary:   colors[2]?.mid ?? colors[0].mid,
+    quaternary: colors[3]?.mid ?? colors[0].mid,
   };
 }
+
+// =============================================================================
+// [v3.1] 유효 감성 키 목록 (dominantEmotion 검증용)
+// =============================================================================
+
+const VALID_EMOTIONS = new Set([
+  'amazement', 'mystery', 'grandeur', 'nostalgia',
+  'warmth',    'vitality', 'freshness', 'peace',
+]);
 
 // =============================================================================
 // ② DOM 참조
@@ -219,7 +213,7 @@ function onTextInput() {
 }
 
 // =============================================================================
-// ⑧ 제출 핸들러 — [방안D] colors 이벤트로 정적 경승지 이미지 표시
+// ⑧ 제출 핸들러
 // =============================================================================
 
 async function onSubmit() {
@@ -231,31 +225,24 @@ async function onSubmit() {
   lastResult = null;
 
   try {
-    // [방안C] analyzeImpression에 onColors / onReply 콜백 전달
-    // Promise는 done 이벤트 수신 시 resolve된다.
     const data = await analyzeImpression(text, {
       tripDuration: selectedDuration,
       companion:    selectedCompanion,
 
-      // Phase 1: colors 이벤트 — emotionScores 저장 + 경승지 이미지 표시
+      // Phase 1: colors 이벤트
+      // [v3.1] colorsData에 dominantEmotion 포함됨 (서버 전송)
       onColors: (colorsData) => {
-        // emotionScores 임시 저장 — onReply에서 스펙트럼/폰트에 사용
-        window._ecardColorData = colorsData;
-
-        // AI가 분석한 spotIndex(0~11)에 해당하는 정적 이미지를 표시
+        window._ecardColorData = colorsData;  // dominantEmotion 포함 ✅
         showSceneImage(colorsData.spotIndex).then(() => {
           revealSceneImage();
         });
-
         setPhase('colors');
       },
 
-      // Phase 2: reply 이벤트 — 답글 카드 렌더링 + 화면 전환
+      // Phase 2: reply 이벤트
       onReply: (replyData) => {
         renderResultFromReply(replyData);
-        setPhase('done');  // ← showScreen('result') 실행 → DOM 가시화
-        // 글로우는 DOM이 실제로 렌더된 뒤(rAF 2틱) 재계산해야
-        // glassFrame.offsetHeight가 올바른 값을 반환한다.
+        setPhase('done');
         const scores = window._ecardColorData?.emotionScores;
         if (scores) {
           requestAnimationFrame(() => {
@@ -267,7 +254,6 @@ async function onSubmit() {
       },
     });
 
-    // done 이벤트 후 합친 객체로 lastResult 설정
     lastResult = data;
 
   } catch (err) {
@@ -296,8 +282,6 @@ function onReset() {
   selectedCompanion = null;
 
   resetSceneImage();
-
-  // 글로우 레이어 제거
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 
   hideError();
@@ -329,7 +313,7 @@ async function onSave() {
       lastResult.reply ?? null,
       lastResult.spotIndex,
       1200,
-      lastResult.dominantEmotion,    // [v3.1] 추가
+      lastResult.dominantEmotion,   // [v3.1] 추가 — PNG 폰트 일치 보장
     );
     if (data.downloadUrl) {
       const a = document.createElement('a');
@@ -382,37 +366,32 @@ function fallbackCopyShare(text) {
 // ⑫ 결과 렌더링
 // =============================================================================
 
-// =============================================================================
-// 변경 3: renderResultFromReply() — applyDominantFont 호출부 수정
-// =============================================================================
- 
 /**
- * [방안C 신규] Phase2 reply 이벤트 데이터만으로 결과 섹션을 렌더링한다.
- * onReply 콜백에서 호출된다.
- *
+ * Phase2 reply 이벤트 데이터로 결과 섹션을 렌더링한다.
  * @param {Object} replyData  { reply, primaryEmotion, keywords }
  */
 function renderResultFromReply(replyData) {
   const { reply = {}, primaryEmotion = '울산의 감동', keywords = [] } = replyData;
- 
+
   renderKeywordChips(keywords);
- 
+
   elPrimaryEmotion.textContent = primaryEmotion;
   elReplyMain.textContent      = reply.main    ?? '';
   elReplyPlace.textContent     = reply.place   ?? '';
   elReplyTagline.textContent   = reply.tagline ?? 'ULSAN — 당신의 울산';
- 
-  // 감성 스펙트럼 렌더링
+
   const colorData = window._ecardColorData;
+
+  // 감성 스펙트럼
   if (colorData?.emotionScores) {
     renderSpectrumBars(colorData.emotionScores);
   }
- 
-  // [v3.1] dominant 폰트: emotionScores 재계산 → dominantEmotion 직접 사용
+
+  // [v3.1] dominant 폰트: 서버 결정값 직접 사용 (재계산 없음)
   if (colorData?.dominantEmotion) {
     applyDominantFont(colorData.dominantEmotion);
   }
- 
+
   // fade-up 애니메이션 재시작
   elScreenResult.querySelectorAll('.fade-up').forEach((el) => {
     el.style.animation = 'none';
@@ -421,38 +400,32 @@ function renderResultFromReply(replyData) {
   });
 }
 
-// =============================================================================
-// 변경 2: applyDominantFont() — emotionScores 재계산 제거, dominantEmotion 직접 사용
-// =============================================================================
- 
 /**
  * dominant 감성에 맞는 폰트 클래스를 .reply-body에 적용한다.
  *
- * [v3.1] 서버(impression.js)가 결정한 dominantEmotion을 직접 받아 사용.
- *        클라이언트에서 emotionScores로 재계산하는 로직 제거.
- *        → 동점·소수점 처리 차이로 인한 불일치 원천 차단.
+ * [v3.1] 서버가 결정한 dominantEmotion 문자열을 직접 받아 사용.
+ *        emotionScores 재계산 로직 완전 제거.
+ *        → 동점·소수점·Math.round() 타이밍 차이로 인한 불일치 원천 차단.
  *
  * @param {string} dominantEmotion  서버에서 결정된 dominant 감성 키
  */
 function applyDominantFont(dominantEmotion) {
   const replyBody = document.querySelector('.reply-body');
   if (!replyBody) return;
- 
+
   // 기존 font-* 클래스 모두 제거
   Array.from(replyBody.classList)
     .filter((c) => c.startsWith('font-'))
     .forEach((c) => replyBody.classList.remove(c));
- 
-  // [v3.1] 서버 결정값 직접 사용 — 재계산 없음
+
+  // [v3.1] 서버 결정값 직접 사용
   const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
   replyBody.classList.add(`font-${safeKey}`);
-  console.log(`[app] dominant 폰트: font-${safeKey} (서버 결정값)`);
+  console.log(`[app] dominant 폰트: font-${safeKey} (서버 결정값 — 재계산 없음)`);
 }
 
 /**
- * 기존 renderResult — done 이벤트 후 lastResult로 전체 재렌더가 필요한 경우 사용.
- * (현재 방안C에서는 onReply 콜백으로 대체되었으나 하위 호환용으로 유지)
- * @param {Object} data
+ * 하위 호환용 renderResult (onReply 콜백 대체 시 사용).
  */
 function renderResult(data) {
   renderKeywordChips(data.keywords ?? []);
@@ -462,6 +435,7 @@ function renderResult(data) {
   elReplyPlace.textContent   = reply.place   ?? '';
   elReplyTagline.textContent = reply.tagline ?? 'ULSAN — 당신의 울산';
   renderSpectrumBars(data.emotionScores ?? {});
+  if (data.dominantEmotion) applyDominantFont(data.dominantEmotion); // [v3.1]
   elScreenResult.querySelectorAll('.fade-up').forEach((el) => {
     el.style.animation = 'none';
     void el.offsetHeight;
@@ -470,14 +444,9 @@ function renderResult(data) {
 }
 
 // =============================================================================
-// applyGlowColors — 이미지-카드 경계에 글로우 레이어 삽입 (방안 2)
+// ⑬ 글로우 컬러 적용
 // =============================================================================
 
-/**
- * 감성 점수에서 주색을 추출하고, 이미지-카드 경계에 .glow-layer div를 삽입한다.
- * PNG 저장과 동일한 구조: 경계선 기준 위(이미지 안) + 아래(카드 안) 양방향 발광.
- * @param {Object} scores
- */
 function applyGlowColors(scores) {
   const result = extractDominantColors(scores);
   if (!result) return;
@@ -487,29 +456,18 @@ function applyGlowColors(scores) {
   const replyCard = document.querySelector('.reply-card');
   if (!replyCard) return;
 
-  // ── reply-card에 모든 색상 변수 주입 ─────────────────────────
-  // ::before 상단 글로우 (방안2) — 1순위: glow-primary, 2순위: glow-secondary
   replyCard.style.setProperty('--glow-primary',   primary);
   replyCard.style.setProperty('--glow-secondary', secondary);
-  // 방사형 빛 번짐 (방안4) — 3순위: reply-main(우상단), 4순위: reply-sub(좌하단)
-  replyCard.style.setProperty('--reply-main', _hexToRgba(tertiary,    0.18));
-  replyCard.style.setProperty('--reply-sub',  _hexToRgba(quaternary,  0.12));
+  replyCard.style.setProperty('--reply-main', _hexToRgba(tertiary,   0.18));
+  replyCard.style.setProperty('--reply-sub',  _hexToRgba(quaternary, 0.12));
 
-  // 글로우 애니메이션 재시작
   replyCard.classList.remove('glow-active');
   void replyCard.offsetWidth;
   replyCard.classList.add('glow-active');
 
-  // 기존 .glow-layer 제거 (잔재 정리)
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
 }
 
-/**
- * hex 색상을 rgba() 문자열로 변환한다.
- * @param {string} hex  '#RRGGBB'
- * @param {number} alpha  0~1
- * @returns {string}  'rgba(r,g,b,a)'
- */
 function _hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -518,7 +476,7 @@ function _hexToRgba(hex, alpha) {
 }
 
 // =============================================================================
-// ⑬ 키워드 칩
+// ⑭ 키워드 칩
 // =============================================================================
 
 function renderKeywordChips(keywords) {
@@ -557,7 +515,7 @@ function renderSpectrumBars(scores) {
 }
 
 // =============================================================================
-// ⑰ 오류 메시지
+// ⑯ 오류 메시지
 // =============================================================================
 
 function showError(msg) {
@@ -571,7 +529,7 @@ function hideError() {
 }
 
 // =============================================================================
-// ⑱ 앱 시작
+// ⑰ 앱 시작
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', init);
