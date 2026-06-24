@@ -60,8 +60,8 @@ export const EMOTION_FONT_MAP = Object.freeze({
   },
   freshness: {
     family:        'IBM Plex Sans KR',
-    ttfPath:       'IBMPlexSansKR-Light.ttf',
-    googleFontUrl: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400&display=swap',
+    ttfPath:       'IBMPlexSansKR-Regular.ttf',
+    googleFontUrl: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400&display=swap'display=swap',
   },
   grandeur: {
     family:        'Gugi',

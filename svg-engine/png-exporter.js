@@ -103,15 +103,21 @@ function resolveFontFamily(emotionScores) {
     return fontInfo.family;
   }
 
-  // TTF 없음 → 등록된 폰트 중 첫 번째
+  // TTF 없음 → FALLBACK_FONT(Nanum Pen Script)로 폴백
+  // ※ 첫 번째 등록 폰트(Hahmlet)로 가지 않도록 의도적으로 제거
+  if (_availableFonts.has(FALLBACK_FONT.family)) {
+    console.warn(`[png-exporter] ${fontInfo.family} 미등록 → ${FALLBACK_FONT.family}(FALLBACK) 사용`);
+    return FALLBACK_FONT.family;
+  }
+
+  // FALLBACK도 없으면 등록된 폰트 중 첫 번째
   if (_availableFonts.size > 0) {
     const fallback = [..._availableFonts][0];
-    console.warn(`[png-exporter] ${fontInfo.family} 미등록 → ${fallback} 사용`);
+    console.warn(`[png-exporter] FALLBACK도 미등록 → ${fallback} 사용`);
     return fallback;
   }
 
-  // 아무것도 없음
-  console.warn(`[png-exporter] 등록된 폰트 없음 → FALLBACK 사용`);
+  console.warn(`[png-exporter] 등록된 폰트 없음 → FALLBACK family 반환`);
   return FALLBACK_FONT.family;
 }
 
@@ -219,8 +225,9 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
     ? (() => {
         ensureFonts();
         const fi = EMOTION_FONT_MAP[dominantEmotion];
-        const fam = _availableFonts.has(fi.family) ? fi.family
-          : _availableFonts.size > 0 ? [..._availableFonts][0]
+        const fam = _availableFonts.has(fi.family)          ? fi.family
+          : _availableFonts.has(FALLBACK_FONT.family)       ? FALLBACK_FONT.family
+          : _availableFonts.size > 0                        ? [..._availableFonts][0]
           : FALLBACK_FONT.family;
         console.log(`[png-exporter] 폰트 결정(확정값): ${fam} (${dominantEmotion})`);
         return fam;
