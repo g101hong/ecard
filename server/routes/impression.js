@@ -1,22 +1,17 @@
 /**
  * @fileoverview server/routes/impression.js
  * @description  POST /api/impression  (방안C: SSE 스트리밍)
- * @version 3.0.0
+ * @version 3.1.0
  *
- * [v3.0 변경] 방안A — 짧은 소감 경승지 선택 결정론적 전환
+ * [v3.1 변경] 폰트 불일치 수정
  * ─────────────────────────────────────────────────────────────────
- *   기존: 15자 이하 + 키워드 없음 → Math.floor(Math.random() * 12)
- *   변경: 15자 이하 + 키워드 없음 → cyrb53Hash(cleanText) % 12
+ *   - pickDominantEmotion() 함수 추가
+ *   - SSE colors 이벤트에 dominantEmotion 필드 추가
+ *   → 클라이언트(app.js)와 서버(png-exporter.js) 모두
+ *     이 값을 그대로 사용 → 재계산·불일치 원천 차단
  *
- *   추가: cyrb53Hash() 헬퍼 (preprocessor.js와 동일 알고리즘)
- *   추가: 완료 로그에 단락회로 여부(shortCircuit) 출력
- *
- * [v2.0 변경] 방안B+C — 단일 Gemini 호출 + SSE 2단계 전송 (유지)
- * ─────────────────────────────────────────────────────────────────
- *
- *   Phase 1 — colors 이벤트: emotionScores, spotIndex 등
- *   Phase 2 — reply  이벤트: reply { main, place, tagline }, keywords 등
- *   Phase 3 — done   이벤트: 스트림 종료
+ * [v3.0 변경] 방안A — 결정론적 경승지 선택
+ * [v2.0 변경] 방안B+C — 단일 Gemini 호출 + SSE 2단계 전송
  */
 
 'use strict';
@@ -29,17 +24,36 @@ import { saveToSupabase }     from '../services/supabase-logger.js';
 const router = Router();
 
 // =============================================================================
-// ① cyrb53 해시 (결정론적 경승지 선택용)
+// ① dominant 감성 결정 함수
 // =============================================================================
 
 /**
- * cyrb53 해시 — emotion-engine/preprocessor.js의 cyrb53Hash()와 동일 알고리즘.
- * diversitySeed와 동일한 값을 impression.js에서 독립적으로 계산하는 데 사용한다.
+ * 감성 점수에서 dominant 감성을 결정한다.
+ * emotion-fonts.js의 EMOTION_PRIORITY와 동일한 순서·로직 사용.
+ * 서버에서 한 번 결정한 값을 클라이언트와 PNG 저장 양쪽에 전달하여
+ * 재계산에 의한 불일치를 방지한다.
  *
- * @param {string} str
- * @param {number} [seed=0]
- * @returns {number}  0 이상의 정수
+ * @param {Object} scores  { amazement, peace, ... } (0~100)
+ * @returns {string}  감성 키
  */
+function pickDominantEmotion(scores) {
+  const PRIORITY = [
+    'amazement', 'mystery', 'grandeur', 'nostalgia',
+    'warmth',    'vitality', 'freshness', 'peace',
+  ];
+  if (!scores || typeof scores !== 'object') return 'amazement';
+  let maxVal = -1;
+  for (const k of PRIORITY) {
+    const v = Number(scores[k]) || 0;
+    if (v > maxVal) maxVal = v;
+  }
+  return PRIORITY.find((k) => (Number(scores[k]) || 0) === maxVal) ?? 'amazement';
+}
+
+// =============================================================================
+// ② cyrb53 해시 (결정론적 경승지 선택용)
+// =============================================================================
+
 function cyrb53Hash(str, seed = 0) {
   let h1 = 0xdeadbeef ^ seed;
   let h2 = 0x41c6ce57 ^ seed;
@@ -54,7 +68,7 @@ function cyrb53Hash(str, seed = 0) {
 }
 
 // =============================================================================
-// ② 입력값 검증
+// ③ 입력값 검증
 // =============================================================================
 
 function validateText(text) {
@@ -68,7 +82,7 @@ function validateText(text) {
 }
 
 // =============================================================================
-// ③ SSE 이벤트 전송 헬퍼
+// ④ SSE 이벤트 전송 헬퍼
 // =============================================================================
 
 function sendEvent(res, eventName, data) {
@@ -77,7 +91,7 @@ function sendEvent(res, eventName, data) {
 }
 
 // =============================================================================
-// ④ reply 추출 헬퍼
+// ⑤ reply 추출 헬퍼
 // =============================================================================
 
 function extractReply(typography) {
@@ -94,7 +108,7 @@ function extractReply(typography) {
 }
 
 // =============================================================================
-// ⑤ 경승지 키워드 목록
+// ⑥ 경승지 키워드 목록
 // =============================================================================
 
 const SPOT_KEYWORDS = [
@@ -113,7 +127,7 @@ const SPOT_KEYWORDS = [
 ];
 
 // =============================================================================
-// ⑥ 여행 기간·동행자 매핑
+// ⑦ 여행 기간·동행자 매핑
 // =============================================================================
 
 const TRIP_DURATION_LABELS = {
@@ -133,7 +147,7 @@ const COMPANION_MAP = {
 };
 
 // =============================================================================
-// ⑦ POST /api/impression — SSE 스트리밍 핸들러
+// ⑧ POST /api/impression — SSE 스트리밍 핸들러
 // =============================================================================
 
 router.post('/', async (req, res) => {
@@ -143,7 +157,6 @@ router.post('/', async (req, res) => {
   // ── 1. 입력값 검증 ─────────────────────────────────────────────
   const validation = validateText(text);
   if (!validation.valid) {
-    // SSE 헤더 전에 오류면 일반 JSON 응답
     return res.status(400).json({ error: validation.error });
   }
   const cleanText    = validation.cleaned;
@@ -163,7 +176,7 @@ router.post('/', async (req, res) => {
 
   const replySourceText = tripLabel ? `[${tripLabel}] ${cleanText}` : cleanText;
 
-  // ── 4. Gemini 단일 호출 (방안B 유지) ───────────────────────────
+  // ── 4. Gemini 단일 호출 ─────────────────────────────────────────
   let emotionResult;
   try {
     emotionResult = await analyzeImpression(replySourceText, { language, visitCtx });
@@ -176,46 +189,42 @@ router.post('/', async (req, res) => {
 
   const { emotionScores, typography, isFallback: emotionIsFallback, meta } = emotionResult;
 
-  // ── 5. 경승지 이미지 선택 ──────────────────────────────────────
-  //
-  //   1순위: 소감에 12경 키워드 명시 → 글자 수 무관하게 해당 경승지
-  //   2순위: 15자 이하 + 키워드 없음 → 시드 결정론적 [v3.0]
-  //            (기존 Math.random() → cyrb53Hash로 변경)
-  //            emotion-engine 단락회로의 diversitySeed % 12와 일치
-  //   3순위: 16자 이상 + 키워드 없음 → AI 분석 결과
-  //
+  // ── 5. dominant 감성 결정 (서버에서 1회 결정 → 클라이언트·PNG 동일 사용)
+  const dominantEmotion = pickDominantEmotion(emotionScores);
+
+  // ── 6. 경승지 이미지 선택 ──────────────────────────────────────
   const _charCount   = cleanText.replace(/\s+/g, '').length;
   const _aiSpotIndex = typography?.spotIndex ?? 0;
 
-  // 1순위: 키워드 명시 여부
   const _mentionedIdx = SPOT_KEYWORDS.findIndex(keywords =>
     keywords.some(kw => cleanText.includes(kw))
   );
 
-  // [v3.0] 2순위: Math.random() → cyrb53Hash 결정론적
   const _seedSpotIndex = cyrb53Hash(cleanText) % 12;
 
   const spotIndex =
-    _mentionedIdx  >= 0 ? _mentionedIdx    // 1순위: 키워드 명시
-    : _charCount   <= 15 ? _seedSpotIndex  // 2순위: 시드 결정론적 [v3.0]
-    : _aiSpotIndex;                        // 3순위: AI 결과
+    _mentionedIdx  >= 0 ? _mentionedIdx
+    : _charCount   <= 15 ? _seedSpotIndex
+    : _aiSpotIndex;
 
   const processingTimeMs = Date.now() - t0;
 
-  // ── 6. Phase 1: colors 이벤트 ──────────────────────────────────
+  // ── 7. Phase 1: colors 이벤트 ──────────────────────────────────
+  // [v3.1] dominantEmotion 추가 — 클라이언트가 재계산 없이 직접 사용
   sendEvent(res, 'colors', {
-    type:         'colors',
+    type:             'colors',
     spotIndex,
-    spotName:     typography?.spotName ?? '',
+    spotName:         typography?.spotName ?? '',
     emotionScores,
+    dominantEmotion,                               // ← [v3.1] 추가
     meta: {
       processingTimeMs,
       isFallback:   emotionIsFallback,
-      shortCircuit: meta?.shortCircuit ?? false,   // [v3.0]
+      shortCircuit: meta?.shortCircuit ?? false,
     },
   });
 
-  // ── 7. Phase 2: reply 이벤트 ───────────────────────────────────
+  // ── 8. Phase 2: reply 이벤트 ───────────────────────────────────
   const { main, place, tagline, isFallback: replyIsFallback } = extractReply(typography);
 
   sendEvent(res, 'reply', {
@@ -230,22 +239,21 @@ router.post('/', async (req, res) => {
     },
   });
 
-  // ── 8. done 이벤트 — 스트림 종료 ──────────────────────────────
+  // ── 9. done 이벤트 ─────────────────────────────────────────────
   sendEvent(res, 'done', { type: 'done' });
   res.end();
 
-  // ── 9. 완료 로그 ───────────────────────────────────────────────
+  // ── 10. 완료 로그 ──────────────────────────────────────────────
   console.log(
     `[impression-sse] 완료 ${processingTimeMs}ms |`,
     `경승지: ${typography?.spotName}(${spotIndex}) |`,
-    `감성: ${typography?.primaryEmotion} |`,
-    meta?.shortCircuit     ? '⚡ 단락회로'  : '🤖 AI분석',   // [v3.0]
+    `감성: ${typography?.primaryEmotion} | 폰트: ${dominantEmotion} |`, // [v3.1]
+    meta?.shortCircuit     ? '⚡ 단락회로'  : '🤖 AI분석',
     emotionIsFallback      ? '⚠️ 감성폴백' : '✅',
     replyIsFallback        ? '⚠️ 답글폴백' : '✅',
-    '| SSE 2단계 전송',
   );
 
-  // ── 10. Supabase 저장 (fire-and-forget) ────────────────────────
+  // ── 11. Supabase 저장 ──────────────────────────────────────────
   saveToSupabase({
     text:            cleanText,
     tripDuration:    tripDuration  ?? null,
