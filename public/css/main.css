@@ -35,7 +35,7 @@
  */
 
 /* 기본 폰트 — UI/제목 */
-@import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&family=Stylish&family=IBM+Plex+Sans+KR:wght@300;400&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&family=Stylish&family=IBM+Plex+Sans+KR:wght@400&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
 /* 감성별 답글 폰트 — Google Fonts 한글 무료 */
@@ -67,7 +67,7 @@
 .reply-body.font-nostalgia .reply-body__place { font-family: 'Gaegu', cursive; }
 
 .reply-body.font-freshness .reply-body__main,
-.reply-body.font-freshness .reply-body__place { font-family: 'IBM Plex Sans KR', sans-serif; font-weight: 300; }
+.reply-body.font-freshness .reply-body__place { font-family: 'IBM Plex Sans KR', sans-serif; font-weight: 400; }
 
 .reply-body.font-grandeur  .reply-body__main,
 .reply-body.font-grandeur  .reply-body__place { font-family: 'Gugi', serif; }
