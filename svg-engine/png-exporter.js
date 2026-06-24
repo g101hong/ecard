@@ -99,7 +99,7 @@ const CFG = Object.freeze({
   COLOR_MAIN:         '#1A1410',   // 주 텍스트
   COLOR_PLACE:        '#6B5A4A',   // 보조 텍스트
   COLOR_TAGLINE:      '#C88C1A',   // tagline
-  FONT_HAND:          'NanumWaIrDeu',
+  FONT_HAND:          'Nanum Pen Script',
   FONT_SANS:          'Noto Sans CJK KR',
 });
 
@@ -271,17 +271,22 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   const fPlace = Math.round(W * 0.0411);
   const fTag   = Math.round(W * 0.0329);
 
-  const lhMain  = Math.round(fMain  * 1.45);
-  const lhPlace = Math.round(fPlace * 1.45);
+  // Nanum Pen Script — 다른 폰트 대비 작게 렌더되므로 warmth 전용 크기 보정 (+14%)
+  const _isWarmth = (fontFamily === 'Nanum Pen Script');
+  const fMainAdj  = _isWarmth ? Math.round(fMain  * 1.143) : fMain;
+  const fPlaceAdj = _isWarmth ? Math.round(fPlace * 1.150) : fPlace;
+
+  const lhMain  = Math.round(fMainAdj  * 1.45);
+  const lhPlace = Math.round(fPlaceAdj * 1.45);
   const lhTag   = Math.round(fTag   * 1.45);
 
   const dummy = createCanvas(W, 10);
   const dctx  = dummy.getContext('2d');
 
-  dctx.font = `bold ${fMain}px '${fontFamily}'`;
+  dctx.font = `bold ${fMainAdj}px '${fontFamily}'`;
   const mainLines  = breakLines(dctx, reply.main  ?? '', maxTextW);
 
-  dctx.font = `${fPlace}px '${fontFamily}'`;
+  dctx.font = `${fPlaceAdj}px '${fontFamily}'`;
   const placeLines = breakLines(dctx, reply.place ?? '', maxTextW);
 
   dctx.font = `${fTag}px '${fontFamily}'`;
@@ -316,12 +321,12 @@ function buildReplyCardBuffer(reply, W, emotionScores = null) {
   ctx.fill();
 
   ctx.fillStyle     = CFG.COLOR_MAIN;
-  ctx.font          = `bold ${fMain}px '${fontFamily}'`;
+  ctx.font          = `bold ${fMainAdj}px '${fontFamily}'`;
   ctx.letterSpacing = '0px';
   fillWrappedText(ctx, reply.main ?? '', px, mainY, maxTextW, lhMain);
 
   ctx.fillStyle     = CFG.COLOR_PLACE;
-  ctx.font          = `${fPlace}px '${fontFamily}'`;
+  ctx.font          = `${fPlaceAdj}px '${fontFamily}'`;
   ctx.letterSpacing = '0px';
   fillWrappedText(ctx, reply.place ?? '', px, placeY, maxTextW, lhPlace);
 

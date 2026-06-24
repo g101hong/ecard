@@ -24,9 +24,9 @@ export const EMOTION_FONT_MAP = Object.freeze({
     googleFontUrl: 'https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;700;900&display=swap',
   },
   peace: {
-    family:        'Gowun Batang',
-    ttfPath:       'GowunBatang-Regular.ttf',
-    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap',
+    family:        'Stylish',
+    ttfPath:       'Stylish-Regular.ttf',
+    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Stylish&display=swap',
   },
   vitality: {
     family:        'Jua',
@@ -39,9 +39,9 @@ export const EMOTION_FONT_MAP = Object.freeze({
     googleFontUrl: 'https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap',
   },
   freshness: {
-    family:        'Gowun Dodum',
-    ttfPath:       'GowunDodum-Regular.ttf',
-    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap',
+    family:        'IBM Plex Sans KR',
+    ttfPath:       'IBMPlexSansKR-Light.ttf',
+    googleFontUrl: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400&display=swap',
   },
   grandeur: {
     family:        'Gugi',
@@ -49,9 +49,9 @@ export const EMOTION_FONT_MAP = Object.freeze({
     googleFontUrl: 'https://fonts.googleapis.com/css2?family=Gugi&display=swap',
   },
   warmth: {
-    family:        'NanumWaIrDeu',
-    ttfPath:       'NanumWaIrDeu.ttf',
-    googleFontUrl: null,   // 자체 호스팅 폰트 (assets/NanumWaIrDeu.ttf)
+    family:        'Nanum Pen Script',
+    ttfPath:       'NanumPenScript-Regular.ttf',
+    googleFontUrl: 'https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap',
   },
   mystery: {
     family:        'Single Day',
