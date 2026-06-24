@@ -75,7 +75,7 @@ export async function generateCardPNG({
   outputPath,
   size            = 1200,
   reply           = null,
-  dominantEmotion,          // [v3.0] 필수 — card.js가 항상 확정값 전달
+  dominantEmotion = null,          // [v3.0] 필수 — card.js가 항상 확정값 전달
 }) {
   const t0 = Date.now();
 
