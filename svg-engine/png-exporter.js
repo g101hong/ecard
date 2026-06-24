@@ -1,22 +1,18 @@
 /**
  * @fileoverview svg-engine/png-exporter.js
- * @description  정적 경승지 이미지(JPG) → PNG 변환 + 답글 카드 합성
- * @version 2.2.0  [v3.2] dominantEmotion 필수화 — 폴백 제거
+ * @version 4.0.0 — 폰트 결정 내부 자급자족
  *
- * ─────────────────────────────────────────────────────────────────
- * [v3.2 변경사항] dominantEmotion 항상 사용, emotionScores 폴백 제거
- * ─────────────────────────────────────────────────────────────────
+ * 핵심 변경:
+ *   dominantEmotion 파라미터를 외부에서 받는 방식 폐기.
+ *   buildReplyCardBuffer() 안에서 emotionScores로 직접 dominant를 계산.
+ *   외부 파라미터 전달 누락 문제를 구조적으로 제거.
  *
- *   resolveFontFamily(dominantEmotion):
- *     - emotionScores 파라미터 제거
- *     - dominantEmotion만 받아서 폰트 결정
- *     - card.js가 항상 확정된 dominantEmotion을 전달하므로 폴백 불필요
- *     - dominantEmotion이 EMOTION_FONT_MAP에 없는 경우만 FALLBACK_FONT 사용
+ *   EMOTION_PRIORITY (emotion-fonts.js와 동일 순서) 를 이 파일에 직접 선언.
+ *   pickDominantLocal(emotionScores) → dominant 감성 키 반환.
+ *   resolveFontFamily(emotionScores) → dominant 감성으로 폰트 결정.
  *
- * ─────────────────────────────────────────────────────────────────
- * [v3.1 변경사항] dominantEmotion 서버 결정값 사용
- * [방안D] 정적 이미지(JPG) → PNG 합성
- * ─────────────────────────────────────────────────────────────────
+ *   외부 API(composeCardPNG, generateCardPNG) 시그니처는 기존과 동일하게 유지.
+ *   (기존 호출부 수정 불필요)
  */
 
 'use strict';
@@ -28,15 +24,14 @@ import { existsSync }                from 'fs';
 import path                          from 'path';
 import { fileURLToPath }             from 'url';
 import { EMOTION_FONT_MAP,
-         FALLBACK_FONT,
-         pickFontByEmotion }         from './emotion-fonts.js';
+         FALLBACK_FONT }             from './emotion-fonts.js';
 import { extractDominantColors }     from './emotion-colors.js';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.resolve(__dirname, '../assets');
 
 // =============================================================================
-// ① 폰트 등록 (모듈 최초 로드 시 1회)
+// ① 폰트 등록
 // =============================================================================
 
 let _fontsRegistered = false;
@@ -49,46 +44,79 @@ function ensureFonts() {
   for (const [emotion, fontInfo] of Object.entries(EMOTION_FONT_MAP)) {
     const ttfPath = path.join(ASSETS_DIR, fontInfo.ttfPath);
     if (!existsSync(ttfPath)) {
-      console.warn(`[png-exporter] ${fontInfo.ttfPath} 없음 → ${emotion} 감성은 폴백 폰트 사용`);
+      console.warn(`[png-exporter] TTF 없음: ${fontInfo.ttfPath} (${emotion})`);
       continue;
     }
     try {
       GlobalFonts.registerFromPath(ttfPath, fontInfo.family);
       _availableFonts.add(fontInfo.family);
+      console.log(`[png-exporter] 폰트 등록: ${fontInfo.family}`);
     } catch (err) {
-      console.warn(`[png-exporter] ${fontInfo.family} 등록 실패:`, err.message);
+      console.warn(`[png-exporter] 폰트 등록 실패: ${fontInfo.family}`, err.message);
     }
   }
 
-  console.log(
-    `[png-exporter] 폰트 등록 완료 (${_availableFonts.size}/${Object.keys(EMOTION_FONT_MAP).length}):`,
-    [..._availableFonts].join(', '),
-  );
+  console.log(`[png-exporter] 등록된 폰트 (${_availableFonts.size}개): ${[..._availableFonts].join(', ')}`);
+}
+
+// =============================================================================
+// ② 내부 dominant 결정 — 외부 파라미터 의존 없음
+// =============================================================================
+
+/**
+ * emotion-fonts.js EMOTION_PRIORITY와 동일 순서.
+ * 이 파일 내부에서만 사용. 외부 import 의존성 없음.
+ */
+const _PRIORITY = [
+  'amazement', 'mystery', 'grandeur', 'nostalgia',
+  'warmth',    'vitality', 'freshness', 'peace',
+];
+
+/**
+ * emotionScores에서 dominant 감성 키를 직접 결정한다.
+ * 외부에서 값을 전달받지 않고 이 함수가 독립적으로 계산.
+ */
+function pickDominantLocal(emotionScores) {
+  if (!emotionScores || typeof emotionScores !== 'object') return 'amazement';
+  let maxVal = -1;
+  for (const k of _PRIORITY) {
+    const v = Number(emotionScores[k]) || 0;
+    if (v > maxVal) maxVal = v;
+  }
+  const dominant = _PRIORITY.find(k => (Number(emotionScores[k]) || 0) === maxVal) ?? 'amazement';
+  console.log(`[png-exporter] dominant 계산: ${dominant} (${maxVal}점)`);
+  return dominant;
 }
 
 /**
- * [v3.2] dominantEmotion으로 폰트 family를 결정한다.
- *        card.js가 항상 확정된 값을 전달하므로 emotionScores 재계산 불필요.
- *
- * @param {string} dominantEmotion  확정된 dominant 감성 키
- * @returns {string}  CSS font-family 값
+ * emotionScores → dominant 결정 → 폰트 family 반환.
+ * TTF 파일이 없으면 등록된 폰트 중 첫 번째 또는 FALLBACK.
  */
-function resolveFontFamily(dominantEmotion) {
+function resolveFontFamily(emotionScores) {
   ensureFonts();
 
-  const fontInfo = EMOTION_FONT_MAP[dominantEmotion] ?? FALLBACK_FONT;
+  const dominant = pickDominantLocal(emotionScores);
+  const fontInfo = EMOTION_FONT_MAP[dominant] ?? FALLBACK_FONT;
 
   if (_availableFonts.has(fontInfo.family)) {
-    console.log(`[png-exporter] 폰트 결정: ${fontInfo.family} (${dominantEmotion})`);
+    console.log(`[png-exporter] 폰트 사용: ${fontInfo.family} (${dominant})`);
     return fontInfo.family;
   }
 
-  console.warn(`[png-exporter] ${fontInfo.family} 미등록 → 폴백 폰트 사용`);
+  // TTF 없음 → 등록된 폰트 중 첫 번째
+  if (_availableFonts.size > 0) {
+    const fallback = [..._availableFonts][0];
+    console.warn(`[png-exporter] ${fontInfo.family} 미등록 → ${fallback} 사용`);
+    return fallback;
+  }
+
+  // 아무것도 없음
+  console.warn(`[png-exporter] 등록된 폰트 없음 → FALLBACK 사용`);
   return FALLBACK_FONT.family;
 }
 
 // =============================================================================
-// ② 출력 설정
+// ③ 출력 설정
 // =============================================================================
 
 const CFG = Object.freeze({
@@ -105,7 +133,7 @@ const CFG = Object.freeze({
 });
 
 // =============================================================================
-// ③ 유틸
+// ④ 유틸
 // =============================================================================
 
 async function ensureDir(p) {
@@ -116,7 +144,6 @@ function breakLines(ctx, text, maxWidth) {
   const tokens = text.split(' ');
   const lines  = [];
   let cur = '';
-
   for (const token of tokens) {
     const candidate = cur ? `${cur} ${token}` : token;
     if (ctx.measureText(candidate).width > maxWidth && cur) {
@@ -131,14 +158,13 @@ function breakLines(ctx, text, maxWidth) {
 }
 
 function fillWrappedText(ctx, text, x, startY, maxWidth, lineHeight) {
-  const lines = breakLines(ctx, text, maxWidth);
-  lines.forEach((line, i) => {
+  breakLines(ctx, text, maxWidth).forEach((line, i) => {
     ctx.fillText(line, x, startY + i * lineHeight);
   });
 }
 
 // =============================================================================
-// ④ 글로우 배경 SVG 생성
+// ⑤ 글로우 배경 SVG
 // =============================================================================
 
 function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
@@ -147,11 +173,9 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
     const rx = w * rx_r, ry = h * ry_r;
     const r  = Math.max(rx, ry);
     const sx = rx / r, sy = ry / r;
-
     const stopTags = stops.map(({ pos, alpha }) =>
       `<stop offset="${pos}" stop-color="${color}" stop-opacity="${alpha}"/>`
     ).join('\n      ');
-
     return `<radialGradient id="${id}"
       gradientUnits="userSpaceOnUse"
       cx="0" cy="0" r="${r.toFixed(2)}"
@@ -166,7 +190,6 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
   const rg2 = makeRG('rg2', W, H, 0.12, 0.92, 0.50, 0.38, quaternary, [
     { pos: 0.00, alpha: 0.12 }, { pos: 0.50, alpha: 0.05 }, { pos: 0.62, alpha: 0.00 },
   ]);
-
   const glowH = Math.round(H * 0.55);
   const rg3 = makeRG('rg3', W, glowH, 0.50, 0.00, 0.85, 0.70, primary, [
     { pos: 0.00, alpha: 0.42 }, { pos: 0.35, alpha: 0.22 }, { pos: 0.70, alpha: 0.00 },
@@ -186,19 +209,12 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 }
 
 // =============================================================================
-// ⑤ 텍스트 레이어 canvas 생성
+// ⑥ 텍스트 레이어 — emotionScores로 직접 폰트 결정
 // =============================================================================
 
-/**
- * [v3.2] dominantEmotion만 받아 폰트 결정 (emotionScores 파라미터 제거)
- *
- * @param {Object} reply
- * @param {number} W
- * @param {string} dominantEmotion  확정된 dominant 감성 키
- * @returns {{ buf: Buffer, cardH: number }}
- */
-function buildReplyCardBuffer(reply, W, dominantEmotion) {
-  const fontFamily = resolveFontFamily(dominantEmotion);
+function buildReplyCardBuffer(reply, W, emotionScores) {
+  // emotionScores에서 직접 결정 — 외부 파라미터 없음
+  const fontFamily = resolveFontFamily(emotionScores);
 
   const px       = Math.round(W * CFG.PAD_X_RATIO);
   const maxTextW = W - px * 2;
@@ -207,7 +223,6 @@ function buildReplyCardBuffer(reply, W, dominantEmotion) {
   const fPlace = Math.round(W * 0.0411);
   const fTag   = Math.round(W * 0.0329);
 
-  // Nanum Pen Script — 다른 폰트 대비 작게 렌더되므로 warmth 전용 크기 보정 (+14%)
   const _isWarmth = (fontFamily === 'Nanum Pen Script');
   const fMainAdj  = _isWarmth ? Math.round(fMain  * 1.143) : fMain;
   const fPlaceAdj = _isWarmth ? Math.round(fPlace * 1.150) : fPlace;
@@ -275,27 +290,15 @@ function buildReplyCardBuffer(reply, W, dominantEmotion) {
 }
 
 // =============================================================================
-// ⑥ composeCardPNG — 메인 합성 함수
+// ⑦ composeCardPNG — 기존 시그니처 유지 (호출부 수정 불필요)
 // =============================================================================
 
-/**
- * [v3.2] dominantEmotion 필수 파라미터 (emotionScores는 글로우 색상에만 사용)
- *
- * @param {Buffer}      imageBuffer
- * @param {string}      outputPath
- * @param {number}      [size=1200]
- * @param {Object|null} [reply]
- * @param {Object|null} [emotionScores]   글로우 색상 계산용 (폰트 결정 불사용)
- * @param {string}      dominantEmotion   폰트 결정용 확정값 (필수)
- * @returns {Promise<string>}
- */
 export async function composeCardPNG(
   imageBuffer,
   outputPath,
-  size            = CFG.DEFAULT_WIDTH,
-  reply           = null,
-  emotionScores   = null,
-  dominantEmotion,         // [v3.2] 필수 — card.js가 항상 확정값 전달
+  size          = CFG.DEFAULT_WIDTH,
+  reply         = null,
+  emotionScores = null,
 ) {
   if (!imageBuffer?.length) throw new Error('imageBuffer가 비어있습니다.');
   if (!outputPath)          throw new Error('outputPath가 없습니다.');
@@ -303,7 +306,6 @@ export async function composeCardPNG(
   const W = Math.round(Math.max(400, Math.min(2400, size)));
   await ensureDir(outputPath);
 
-  // STEP 1: 정적 이미지 → 지정 너비로 리사이즈
   const imgBuf = await sharp(imageBuffer)
     .resize({ width: W })
     .png({ compressionLevel: CFG.COMPRESSION_LEVEL })
@@ -314,12 +316,10 @@ export async function composeCardPNG(
     return outputPath;
   }
 
-  // STEP 2: 실제 이미지 크기 확인
   const { width: IW, height: IH } = await sharp(imgBuf).metadata();
   const imgW = IW ?? W;
   const imgH = IH ?? W;
 
-  // STEP 3: 감성 주색 4종 추출 (글로우 색상용 — 폰트와 무관)
   const colorResult = extractDominantColors(emotionScores);
   const {
     primary    = '#888888',
@@ -328,24 +328,17 @@ export async function composeCardPNG(
     quaternary = '#888888',
   } = colorResult ?? {};
 
-  // STEP 4: 텍스트 캔버스 생성 — [v3.2] dominantEmotion만 전달 (emotionScores 불필요)
-  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, dominantEmotion);
+  // emotionScores를 직접 전달 — buildReplyCardBuffer 내부에서 dominant 결정
+  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores);
 
-  // STEP 5: 배경+글로우 SVG 래스터라이즈
   const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary, tertiary, quaternary);
   const bgBuf    = await sharp(Buffer.from(bgSvgStr, 'utf-8'))
     .resize({ width: imgW })
     .png()
     .toBuffer();
 
-  // STEP 6: 최종 합성
   await sharp({
-    create: {
-      width:      imgW,
-      height:     imgH + cardH,
-      channels:   4,
-      background: CFG.BG_IMAGE,
-    },
+    create: { width: imgW, height: imgH + cardH, channels: 4, background: CFG.BG_IMAGE },
   })
   .composite([
     { input: imgBuf,  top: 0,    left: 0 },
@@ -359,33 +352,20 @@ export async function composeCardPNG(
 }
 
 // =============================================================================
-// ⑦ generateCardPNG — 통합 진입점
+// ⑧ generateCardPNG — 기존 시그니처 유지
 // =============================================================================
 
-/**
- * [v3.2] dominantEmotion 필수 전달 — card.js가 항상 확정값을 전달함
- *
- * @param {Object} options
- * @param {Object}  options.emotionScores
- * @param {number}  options.spotIndex        0~11
- * @param {string}  options.outputPath
- * @param {number}  [options.size=1200]
- * @param {Object|null} [options.reply]
- * @param {string}  options.dominantEmotion  확정된 dominant 감성 키 (필수)
- * @returns {Promise<string>}
- */
 export async function generateCardPNG({
   emotionScores,
   spotIndex,
   outputPath,
-  size            = 1200,
-  reply           = null,
-  dominantEmotion,    // [v3.2] 필수 (card.js에서 항상 확정값 전달)
+  size  = 1200,
+  reply = null,
 }) {
   const t0 = Date.now();
 
   if (typeof spotIndex !== 'number' || spotIndex < 0 || spotIndex > 11) {
-    throw new Error(`spotIndex가 유효하지 않습니다 (0~11 필요): ${spotIndex}`);
+    throw new Error(`spotIndex 범위 오류: ${spotIndex}`);
   }
 
   const { readFile } = await import('fs/promises');
@@ -399,20 +379,10 @@ export async function generateCardPNG({
     throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
   }
 
-  const savedPath = await composeCardPNG(
-    sceneImageBuf,
-    outputPath,
-    size,
-    reply,
-    emotionScores,
-    dominantEmotion,   // [v3.2] 항상 확정값
-  );
+  const savedPath = await composeCardPNG(sceneImageBuf, outputPath, size, reply, emotionScores);
 
   console.info(
-    `[svg-engine] PNG 생성 완료 | ` +
-    `path=${savedPath} | spotIndex=${spotIndex} | size=${size}px | ` +
-    `font:${dominantEmotion}(${EMOTION_FONT_MAP[dominantEmotion]?.family ?? 'fallback'}) | ` +
-    `${Date.now() - t0}ms`,
+    `[svg-engine] PNG 완료 | spotIndex=${spotIndex} | size=${size}px | ${Date.now() - t0}ms`
   );
 
   return savedPath;
