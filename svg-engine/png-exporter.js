@@ -1,6 +1,6 @@
 /**
  * @fileoverview svg-engine/png-exporter.js
- * @version 4.0.0 — 폰트 결정 내부 자급자족
+ * @version 4.1.0 — dominantEmotion 외부 확정값 우선 사용
  *
  * 핵심 변경:
  *   dominantEmotion 파라미터를 외부에서 받는 방식 폐기.
@@ -214,7 +214,18 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 
 function buildReplyCardBuffer(reply, W, emotionScores) {
   // emotionScores에서 직접 결정 — 외부 파라미터 없음
-  const fontFamily = resolveFontFamily(emotionScores);
+  // [v4.1 fix] dominantEmotion이 외부에서 확정된 경우 직접 사용, 없으면 emotionScores 재계산
+  const fontFamily = (dominantEmotion && EMOTION_FONT_MAP[dominantEmotion])
+    ? (() => {
+        ensureFonts();
+        const fi = EMOTION_FONT_MAP[dominantEmotion];
+        const fam = _availableFonts.has(fi.family) ? fi.family
+          : _availableFonts.size > 0 ? [..._availableFonts][0]
+          : FALLBACK_FONT.family;
+        console.log(`[png-exporter] 폰트 결정(확정값): ${fam} (${dominantEmotion})`);
+        return fam;
+      })()
+    : resolveFontFamily(emotionScores);
 
   const px       = Math.round(W * CFG.PAD_X_RATIO);
   const maxTextW = W - px * 2;
@@ -296,9 +307,10 @@ function buildReplyCardBuffer(reply, W, emotionScores) {
 export async function composeCardPNG(
   imageBuffer,
   outputPath,
-  size          = CFG.DEFAULT_WIDTH,
-  reply         = null,
-  emotionScores = null,
+  size             = CFG.DEFAULT_WIDTH,
+  reply            = null,
+  emotionScores    = null,
+  dominantEmotion  = null,   // [v4.1 fix] index.js 전달값 수신 — 자체 재계산 우선순위 낮춤
 ) {
   if (!imageBuffer?.length) throw new Error('imageBuffer가 비어있습니다.');
   if (!outputPath)          throw new Error('outputPath가 없습니다.');
@@ -379,7 +391,7 @@ export async function generateCardPNG({
     throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
   }
 
-  const savedPath = await composeCardPNG(sceneImageBuf, outputPath, size, reply, emotionScores);
+  const savedPath = await composeCardPNG(sceneImageBuf, outputPath, size, reply, emotionScores, dominantEmotion);
 
   console.info(
     `[svg-engine] PNG 완료 | spotIndex=${spotIndex} | size=${size}px | ${Date.now() - t0}ms`
