@@ -1,27 +1,19 @@
 /**
  * @fileoverview server/routes/card.js
  * @description  POST /api/card — E-Card PNG 생성 및 다운로드 URL 반환
- * @version 2.2.0  [v3.2] dominantEmotion 결정 로직 강화
  *
  * ─────────────────────────────────────────────────────────────────
- * [v3.2 변경사항] dominantEmotion null 폴백 문제 수정
+ * 처리 흐름
  * ─────────────────────────────────────────────────────────────────
  *
- *   문제:
- *     - dominantEmotion이 클라이언트로부터 전달되지 않거나 null인 경우
- *       png-exporter가 Math.round() 정수화된 emotionScores로 재계산
- *       → 원점수와 순위 역전 발생 → 폰트 불일치
- *
- *   해결:
- *     - dominantEmotion이 유효한 값이면 그대로 사용
- *     - null이거나 유효하지 않으면 card.js가 원본 emotionScores(정수화 전)로
- *       직접 결정 → png-exporter에 확정된 값 전달
- *     - png-exporter는 dominantEmotion을 항상 직접 사용 (폴백 없음)
- *
- * ─────────────────────────────────────────────────────────────────
- * [v3.1 변경사항] dominantEmotion 수신 및 generateCardPNG 전달
- * [방안D] 정적 경승지 이미지(ulsan_scene_XX.jpg) 기반
- * ─────────────────────────────────────────────────────────────────
+ *   1. emotionScores, spotIndex, reply, size, dominantEmotion 수신
+ *   2. emotionScores 원본 보존 (정수화 전 — dominant 결정에 사용)
+ *   3. dominantEmotion 확정
+ *      ① 클라이언트 전달값이 유효하면 그대로 사용
+ *      ② null이거나 유효하지 않으면 원본 emotionScores로 자체 계산
+ *         → 정수화 후 재계산 시 발생하던 순위 역전·폰트 불일치 방지
+ *   4. generateCardPNG() 호출 → /output/{uuid}.png 저장
+ *   5. downloadUrl 반환
  */
 
 'use strict';
@@ -85,7 +77,7 @@ function sanitizeReply(reply) {
 }
 
 /**
- * [v3.2] emotionScores(정수화 전 원본)에서 dominant 감성을 결정한다.
+ * emotionScores(정수화 전 원본)에서 dominant 감성을 결정한다.
  * impression.js의 pickDominantEmotion()과 동일 로직.
  * dominantEmotion이 클라이언트로부터 전달되지 않을 때의 폴백용.
  *
@@ -127,13 +119,13 @@ router.post('/', async (req, res) => {
   const cleanReply = sanitizeReply(reply);
   const outputSize = Math.min(Math.max(parseInt(size, 10) || 1200, 400), 2400);
 
-  // 3. [v3.2] dominantEmotion 확정
+  // 3. dominantEmotion 확정
   //    우선순위: ① 클라이언트 전달값(유효한 경우) → ② 원본 emotionScores로 자체 계산
   //    png-exporter에는 항상 확정된 값을 전달 (null 전달 금지)
   const finalDominant =
     (typeof dominantEmotion === 'string' && VALID_DOMINANT_EMOTIONS.has(dominantEmotion))
       ? dominantEmotion
-      : computeDominantEmotion(rawScores);   // ← [v3.2] 원본 점수로 자체 계산
+      : computeDominantEmotion(rawScores);
 
   // 4. PNG 합성
   const fileName   = `${uuidv4()}.png`;

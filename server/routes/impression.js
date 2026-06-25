@@ -1,17 +1,21 @@
 /**
  * @fileoverview server/routes/impression.js
- * @description  POST /api/impression  (방안C: SSE 스트리밍)
- * @version 3.1.0
+ * @description  POST /api/impression — SSE 2단계 스트리밍
  *
- * [v3.1 변경] 폰트 불일치 수정
  * ─────────────────────────────────────────────────────────────────
- *   - pickDominantEmotion() 함수 추가
- *   - SSE colors 이벤트에 dominantEmotion 필드 추가
- *   → 클라이언트(app.js)와 서버(png-exporter.js) 모두
- *     이 값을 그대로 사용 → 재계산·불일치 원천 차단
+ * 처리 흐름
+ * ─────────────────────────────────────────────────────────────────
  *
- * [v3.0 변경] 방안A — 결정론적 경승지 선택
- * [v2.0 변경] 방안B+C — 단일 Gemini 호출 + SSE 2단계 전송
+ *   1. 입력 검증
+ *   2. SSE 헤더 설정 (keep-alive)
+ *   3. visitContext 수집 (절기·시간대·동행자)
+ *   4. Gemini 단일 호출 — 감성 분석 + 답글 동시 반환
+ *   5. dominantEmotion 확정 (서버 1회 결정 → 클라이언트·PNG 공유)
+ *   6. 경승지 선택 (키워드 직접 언급 > 짧은 입력 해시 > AI 결과)
+ *   7. Phase 1: "colors" 이벤트 전송 (spotIndex, emotionScores, dominantEmotion)
+ *   8. Phase 2: "reply"  이벤트 전송 (reply, keywords, primaryEmotion)
+ *   9. "done" 이벤트 전송 후 종료
+ *  10. Supabase 저장 (fire-and-forget)
  */
 
 'use strict';
@@ -210,13 +214,12 @@ router.post('/', async (req, res) => {
   const processingTimeMs = Date.now() - t0;
 
   // ── 7. Phase 1: colors 이벤트 ──────────────────────────────────
-  // [v3.1] dominantEmotion 추가 — 클라이언트가 재계산 없이 직접 사용
   sendEvent(res, 'colors', {
     type:             'colors',
     spotIndex,
     spotName:         typography?.spotName ?? '',
     emotionScores,
-    dominantEmotion,                               // ← [v3.1] 추가
+    dominantEmotion,
     meta: {
       processingTimeMs,
       isFallback:   emotionIsFallback,
@@ -247,7 +250,7 @@ router.post('/', async (req, res) => {
   console.log(
     `[impression-sse] 완료 ${processingTimeMs}ms |`,
     `경승지: ${typography?.spotName}(${spotIndex}) |`,
-    `감성: ${typography?.primaryEmotion} | 폰트: ${dominantEmotion} |`, // [v3.1]
+    `감성: ${typography?.primaryEmotion} | 폰트: ${dominantEmotion} |`,
     meta?.shortCircuit     ? '⚡ 단락회로'  : '🤖 AI분석',
     emotionIsFallback      ? '⚠️ 감성폴백' : '✅',
     replyIsFallback        ? '⚠️ 답글폴백' : '✅',
