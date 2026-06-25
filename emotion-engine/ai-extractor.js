@@ -7,6 +7,7 @@
  *
  *   단일 Gemini 호출로 감성 8차원 분석 + E-Card 3단 답글(reply)을 동시에 생성.
  *   visitCtx(절기·계절·시간대·동행자)를 프롬프트에 포함하여 맥락 기반 답글 생성.
+ *   collectVisitContext()는 emotion-engine/visit-context.js에서 제공한다.
  */
 
 'use strict';
@@ -34,13 +35,12 @@ const API_CONFIG = Object.freeze({
 /**
  * SlimPreprocessed + VisitContext를 받아 AI 분석용 사용자 프롬프트를 생성한다.
  *
- * [v4.0 추가] visitCtx 파라미터:
- *   reply-engine/visit-context.js의 collectVisitContext() 반환값.
- *   절기·계절·시간대 정보를 프롬프트에 포함해 reply 생성 품질을 높인다.
- *   미전달 시 해당 섹션을 생략하고 기존 동작과 동일하게 처리한다.
+ * visitCtx(emotion-engine/visit-context.js의 collectVisitContext() 반환값)가
+ * 전달되면 절기·계절·시간대 정보를 프롬프트에 포함해 reply 생성 품질을 높인다.
+ * 미전달 시 해당 섹션을 생략하고 기존 동작과 동일하게 처리한다.
  *
  * @param {import('./preprocessor.js').SlimPreprocessed} pre
- * @param {Object|null} [visitCtx]  collectVisitContext() 반환값 (선택)
+ * @param {Object|null} [visitCtx]  collectVisitContext() 반환값 (emotion-engine/visit-context.js)
  * @returns {string}
  */
 export function buildUserPrompt(pre, visitCtx = null) {
@@ -463,7 +463,7 @@ function generateFallback(pre) {
  * 전처리된 입력을 받아 Gemini AI로 종합 감성 분석 + reply 생성을 수행한다.
  *
  * @param {import('./preprocessor.js').SlimPreprocessed} pre
- * @param {Object|null} [visitCtx]  collectVisitContext() 반환값
+ * @param {Object|null} [visitCtx]  collectVisitContext() 반환값 (emotion-engine/visit-context.js)
  * @returns {Promise<ExtractionResult>}
  */
 export async function extractEmotions(pre, visitCtx = null) {

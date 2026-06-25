@@ -229,7 +229,7 @@ function formatECardResult(data) {
  * @param {number}  [options.spotIndex]   경승지 강제 지정 (0~11)
  * @param {string}  [options.language]    언어 코드 강제 지정 ('ko'|'en'|'ja'|'zh')
  * @param {boolean} [options.debugMode]   콘솔 디버그 출력 여부
- * @param {Object}  [options.visitCtx]    collectVisitContext() 반환값
+ * @param {Object}  [options.visitCtx]    collectVisitContext() 반환값 (emotion-engine/visit-context.js)
  * @returns {Promise<ECardResult>}
  */
 export async function analyzeImpression(rawText, options = {}) {
