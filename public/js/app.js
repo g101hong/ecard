@@ -465,8 +465,8 @@ function applyGlowColors(scores) {
 
   replyCard.style.setProperty('--glow-primary',   primary);
   replyCard.style.setProperty('--glow-secondary', secondary);
-  replyCard.style.setProperty('--reply-main', _hexToRgba(tertiary,   0.18));
-  replyCard.style.setProperty('--reply-sub',  _hexToRgba(quaternary, 0.12));
+  replyCard.style.setProperty('--reply-main', _hexToRgba(tertiary,   0.32));
+  replyCard.style.setProperty('--reply-sub',  _hexToRgba(quaternary, 0.22));
 
   replyCard.classList.remove('glow-active');
   void replyCard.offsetWidth;
