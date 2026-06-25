@@ -239,9 +239,11 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
   const px       = Math.round(W * CFG.PAD_X_RATIO);
   const maxTextW = W - px * 2;
 
-  const fMain  = Math.round(W * 0.0576);
-  const fPlace = Math.round(W * 0.0411);
-  const fTag   = Math.round(W * 0.0329);
+  // × 1.5 스케일 — 폰트·간격·여백 모두 동일 비율 확대
+  const SCALE  = 1.5;
+  const fMain  = Math.round(W * 0.0576 * SCALE);
+  const fPlace = Math.round(W * 0.0411 * SCALE);
+  const fTag   = Math.round(W * 0.0329 * SCALE);
 
   const _isWarmth = (fontFamily === 'Nanum Pen Script');
   const fMainAdj  = _isWarmth ? Math.round(fMain  * 1.143) : fMain;
@@ -264,12 +266,12 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
   const tagText  = (reply.tagline ?? '').replace(/—/g, '-');
   const tagLines = breakLines(dctx, tagText, maxTextW);
 
-  const padTop   = Math.round(W * 0.08);
-  const padBot   = Math.round(W * 0.06);
-  const gapBlock = Math.round(W * 0.04);
+  const padTop   = Math.round(W * 0.08 * SCALE);
+  const padBot   = Math.round(W * 0.06 * SCALE);
+  const gapBlock = Math.round(W * 0.04 * SCALE);
 
   const lineY      = padTop;
-  const mainY      = lineY  + Math.round(W * 0.06);
+  const mainY      = lineY  + Math.round(W * 0.06 * SCALE);
   const mainBlock  = mainLines.length  * lhMain;
   const placeY     = mainY  + mainBlock  + gapBlock;
   const placeBlock = placeLines.length * lhPlace;
