@@ -1,19 +1,20 @@
 /**
  * @fileoverview 울산 E-Card — 서버 API fetch 래퍼
  * @module public/js/api
- * @version 2.1.0  [v3.1] dominantEmotion 전달 추가
  *
  * ─────────────────────────────────────────────────────────────────
- * [v3.1 변경사항] 폰트 불일치 수정
+ * 제공 함수
  * ─────────────────────────────────────────────────────────────────
  *
- *   1. SSE colors 이벤트 수신 시 dominantEmotion을 accumulated에 저장
- *   2. requestCard() 파라미터에 dominantEmotion 추가
- *   3. /api/card POST body에 dominantEmotion 포함
+ *   analyzeImpression(text, options)
+ *     POST /api/impression — SSE 스트리밍 수신.
+ *     colors 이벤트 수신 즉시 onColors(colorsData) 콜백 호출.
+ *     reply  이벤트 수신 즉시 onReply(replyData)  콜백 호출.
+ *     done   이벤트 수신 시 Promise resolve (누적 객체 반환).
  *
- * ─────────────────────────────────────────────────────────────────
- * [방안C 변경사항] SSE 스트리밍 수신
- * ─────────────────────────────────────────────────────────────────
+ *   requestCard(emotionScores, reply, spotIndex, size, dominantEmotion)
+ *     POST /api/card — PNG 합성 요청 → downloadUrl 반환.
+ *     dominantEmotion을 함께 전달하여 PNG 폰트가 화면과 일치하도록 보장.
  */
 
 'use strict';
@@ -97,7 +98,7 @@ async function _readSSEStream(body, controller, onEvent) {
 /**
  * 방문객 소감을 분석하여 E-Card 데이터를 반환한다.
  *
- * [방안C] SSE 스트리밍 수신.
+ * SSE 스트리밍 수신.
  *   colors 이벤트 수신 즉시 options.onColors(colorsData) 호출.
  *   reply  이벤트 수신 즉시 options.onReply(replyData)  호출.
  *   done   이벤트 수신 시  Promise resolve (합친 객체 반환).
@@ -167,7 +168,7 @@ export async function analyzeImpression(text, options = {}) {
           emotionScores:    _sanitizeEmotionScores(data.emotionScores),
           colorTempFilter:  data.colorTempFilter  ?? null,
           diversitySeed:    data.diversitySeed    ?? 0,
-          dominantEmotion:  data.dominantEmotion  ?? 'amazement',  // [v3.1] 추가
+          dominantEmotion:  data.dominantEmotion  ?? 'amazement',
         });
 
         if (typeof onColors === 'function') {
@@ -225,21 +226,20 @@ export async function analyzeImpression(text, options = {}) {
 /**
  * E-Card PNG 생성을 요청한다.
  *
- * [v3.1] dominantEmotion 파라미터 추가.
- *        서버가 이 값으로 폰트를 직접 결정하여 화면 폰트와 일치시킨다.
+ * dominantEmotion을 함께 전달하여 PNG 폰트가 화면 폰트와 일치하도록 한다.
  *
  * @param {Object}      emotionScores
  * @param {Object|null} [reply]
  * @param {number}      spotIndex         0~11
  * @param {number}      [size=1200]
- * @param {string|null} [dominantEmotion] 서버 결정 dominant 감성 키 [v3.1]
+ * @param {string|null} [dominantEmotion] 서버 결정 dominant 감성 키
  */
 export async function requestCard(
   emotionScores,
   reply          = null,
   spotIndex,
   size           = 1200,
-  dominantEmotion = null,   // [v3.1] 추가
+  dominantEmotion = null,
 ) {
   if (!emotionScores || typeof emotionScores !== 'object') {
     throw new ApiError('감성 데이터가 없습니다. 소감을 먼저 입력해주세요.', 400, false);
@@ -262,7 +262,7 @@ export async function requestCard(
         reply:           reply ?? null,
         spotIndex,
         size:            Math.min(Math.max(size, 400), 2400),
-        dominantEmotion: dominantEmotion ?? null,   // [v3.1] 추가
+        dominantEmotion: dominantEmotion ?? null,
       }),
     });
   } catch (err) {

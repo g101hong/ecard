@@ -88,7 +88,7 @@ function extractDominantColors(emotionScores) {
 }
 
 // =============================================================================
-// [v3.1] 유효 감성 키 목록 (dominantEmotion 검증용)
+// 유효 감성 키 목록 (dominantEmotion 검증용)
 // =============================================================================
 
 const VALID_EMOTIONS = new Set([
@@ -427,7 +427,8 @@ function applyDominantFont(dominantEmotion) {
     .filter((c) => c.startsWith('font-'))
     .forEach((c) => replyBody.classList.remove(c));
 
-  // [v3.1] 서버 결정값 직접 사용  const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
+  // 서버 결정값 직접 사용
+  const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
   replyBody.classList.add(`font-${safeKey}`);
   console.log(`[app] dominant 폰트 적용: font-${safeKey}`);
 }
