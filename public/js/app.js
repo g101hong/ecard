@@ -1,22 +1,25 @@
 /**
  * @fileoverview 울산 E-Card — 프론트엔드 앱 진입점
- * @version 6.1.0  [v3.1] 폰트 불일치 수정 — dominantEmotion 서버 결정값 사용
+ * @version 6.1.0
  *
  * ─────────────────────────────────────────────────────────────────
- * [v3.1 변경사항] 폰트 불일치 수정
+ * 현재 동작 방식 (정적 이미지 + SSE 스트리밍)
  * ─────────────────────────────────────────────────────────────────
  *
- *   기존: applyDominantFont(emotionScores) → 클라이언트에서 dominant 재계산
- *   변경: applyDominantFont(dominantEmotion) → 서버 결정값 직접 사용
+ *   POST /api/impression → SSE 2단계 스트리밍
  *
- *   서버(impression.js)가 SSE colors 이벤트에 dominantEmotion을 포함하여 전송.
- *   app.js는 이 값을 window._ecardColorData.dominantEmotion으로 저장 후
- *   renderResultFromReply()에서 applyDominantFont()에 직접 전달.
- *   onSave()에서도 dominantEmotion을 requestCard()에 전달하여 PNG 폰트 일치.
+ *   Phase 1 (colors 이벤트):
+ *     서버가 spotIndex·emotionScores·dominantEmotion을 전송.
+ *     클라이언트는 spotIndex에 해당하는 정적 이미지(ulsan_scene_XX.jpg)를
+ *     scene-image.js를 통해 표시한다.
  *
- * ─────────────────────────────────────────────────────────────────
- * [방안D 변경사항] SVG 패널 색채 패칭 → 정적 ulsan_scene 이미지 표시
- * ─────────────────────────────────────────────────────────────────
+ *   Phase 2 (reply 이벤트):
+ *     서버가 reply(main/place/tagline)·keywords 등을 전송.
+ *     클라이언트는 답글 카드를 렌더링하고 글로우 색상을 적용한다.
+ *
+ *   저장(onSave):
+ *     POST /api/card → 서버에서 PNG 합성 → downloadUrl 반환 → 자동 다운로드.
+ *     dominantEmotion을 함께 전달하여 PNG 폰트가 웹화면과 일치하도록 보장.
  */
 
 'use strict';
@@ -25,16 +28,15 @@
 // ① 모듈 임포트
 // =============================================================================
 
-import { SPOTS }           from './spots.js';
 import { showSceneImage,
          revealSceneImage,
          resetSceneImage } from './scene-image.js';
 import { analyzeImpression,
          requestCard }     from './api.js';
 
-// emotion-colors — 서버 모듈 직접 import 불가 (빌드 도구 없음) → 인라인 구현
-// emotion-colors — svg-engine/emotion-colors.js 와 완전 동일한 수치로 통일
-// (웹화면과 저장이미지의 글로우 색상 일치)
+// svg-engine/emotion-colors.js 와 동일한 수치를 인라인으로 구현.
+// (빌드 도구 없는 환경에서 서버 모듈을 직접 import할 수 없기 때문.)
+// 웹화면 글로우 색상과 저장 PNG 글로우 색상을 일치시키기 위해 수치를 통일.
 const EMOTION_BASE_COLOR = {
   warmth:    { h: 12,  s: 0.88, l: 0.58 }, // 코랄오렌지  — 온기·노을·포근
   amazement: { h: 48,  s: 0.95, l: 0.55 }, // 황금앰버    — 경이·일출·장엄
@@ -231,17 +233,16 @@ async function onSubmit() {
       tripDuration: selectedDuration,
       companion:    selectedCompanion,
 
-      // Phase 1: colors 이벤트
-      // [v3.1] colorsData에 dominantEmotion 포함됨 (서버 전송)
+      // Phase 1: colors 이벤트 — spotIndex·emotionScores·dominantEmotion 수신
       onColors: (colorsData) => {
-        window._ecardColorData = colorsData;  // dominantEmotion 포함 ✅
+        window._ecardColorData = colorsData;
         showSceneImage(colorsData.spotIndex).then(() => {
           revealSceneImage();
         });
         setPhase('colors');
       },
 
-      // Phase 2: reply 이벤트
+      // Phase 2: reply 이벤트 — 답글 카드 렌더링
       onReply: (replyData) => {
         renderResultFromReply(replyData);
         setPhase('done');
@@ -258,9 +259,8 @@ async function onSubmit() {
 
     lastResult = data;
 
-    // [v3.2 fix] dominantEmotion을 lastResult에 병합
     // _ecardColorData.dominantEmotion은 서버가 결정한 확정값.
-    // analyzeImpression() 반환 data에는 포함되지 않으므로 여기서 보완.
+    // analyzeImpression() 반환 data에는 포함되지 않으므로 여기서 병합.
     if (window._ecardColorData?.dominantEmotion) {
       lastResult.dominantEmotion = window._ecardColorData.dominantEmotion;
     }
@@ -322,7 +322,7 @@ async function onSave() {
       lastResult.reply ?? null,
       lastResult.spotIndex,
       1200,
-      lastResult.dominantEmotion,   // [v3.1] 추가 — PNG 폰트 일치 보장
+      lastResult.dominantEmotion,   // PNG 폰트가 웹화면과 일치하도록 전달
     );
     if (data.downloadUrl) {
       const a = document.createElement('a');
@@ -396,7 +396,7 @@ function renderResultFromReply(replyData) {
     renderSpectrumBars(colorData.emotionScores);
   }
 
-  // [v3.1] dominant 폰트: 서버 결정값 직접 사용 (재계산 없음)
+  // dominant 폰트: 서버 결정값을 그대로 사용 (클라이언트 재계산 없음)
   if (colorData?.dominantEmotion) {
     applyDominantFont(colorData.dominantEmotion);
   }
@@ -412,9 +412,9 @@ function renderResultFromReply(replyData) {
 /**
  * dominant 감성에 맞는 폰트 클래스를 .reply-body에 적용한다.
  *
- * [v3.1] 서버가 결정한 dominantEmotion 문자열을 직접 받아 사용.
- *        emotionScores 재계산 로직 완전 제거.
- *        → 동점·소수점·Math.round() 타이밍 차이로 인한 불일치 원천 차단.
+ * 서버가 결정한 dominantEmotion 문자열을 직접 받아 사용한다.
+ * emotionScores 재계산 없이 서버 확정값을 그대로 쓰므로
+ * 동점·소수점 처리 차이로 인한 폰트 불일치가 발생하지 않는다.
  *
  * @param {string} dominantEmotion  서버에서 결정된 dominant 감성 키
  */
@@ -427,10 +427,9 @@ function applyDominantFont(dominantEmotion) {
     .filter((c) => c.startsWith('font-'))
     .forEach((c) => replyBody.classList.remove(c));
 
-  // [v3.1] 서버 결정값 직접 사용
-  const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
+  // [v3.1] 서버 결정값 직접 사용  const safeKey = VALID_EMOTIONS.has(dominantEmotion) ? dominantEmotion : 'amazement';
   replyBody.classList.add(`font-${safeKey}`);
-  console.log(`[app] dominant 폰트: font-${safeKey} (서버 결정값 — 재계산 없음)`);
+  console.log(`[app] dominant 폰트 적용: font-${safeKey}`);
 }
 
 /**
@@ -444,7 +443,7 @@ function renderResult(data) {
   elReplyPlace.textContent   = reply.place   ?? '';
   elReplyTagline.textContent = reply.tagline ?? 'ULSAN — 당신의 울산';
   renderSpectrumBars(data.emotionScores ?? {});
-  if (data.dominantEmotion) applyDominantFont(data.dominantEmotion); // [v3.1]
+  if (data.dominantEmotion) applyDominantFont(data.dominantEmotion);
   elScreenResult.querySelectorAll('.fade-up').forEach((el) => {
     el.style.animation = 'none';
     void el.offsetHeight;
