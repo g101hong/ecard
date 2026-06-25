@@ -139,6 +139,10 @@ router.post('/', async (req, res) => {
   const fileName   = `${uuidv4()}.png`;
   const outputPath = path.join(OUTPUT_DIR, fileName);
 
+  // 저장 시각 — 한국 시간(KST, UTC+9) 기준 "YYYY.MM.DD HH:mm"
+  const _now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const createdAt = _now.toISOString().slice(0, 16).replace('T', ' ').replace('-', '.').replace('-', '.');
+
   let savedPath;
   try {
     savedPath = await generateCardPNG({
@@ -147,7 +151,8 @@ router.post('/', async (req, res) => {
       outputPath,
       size:            outputSize,
       reply:           cleanReply,
-      dominantEmotion: finalDominant,   // ← 항상 확정된 값 (null 없음)
+      dominantEmotion: finalDominant,
+      createdAt,                         // ← KST 날짜·시분
     });
   } catch (err) {
     console.error('[card] PNG 생성 실패:', err.message);
