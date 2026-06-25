@@ -190,18 +190,20 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
     </radialGradient>`;
   };
 
-  const rg1 = makeRG('rg1', W, H, 0.88, 0.08, 0.62, 0.45, tertiary, [
-    { pos: 0.00, alpha: 0.18 }, { pos: 0.45, alpha: 0.07 }, { pos: 0.68, alpha: 0.00 },
+  // 방사형 빛: rg1 우상단 cy 0.08→0.18 (조금 아래로)
+  // 투명도: rg1 0.18→0.32 / rg2 0.12→0.22 / rg3 0.42→0.65 / rg4 0.30→0.50
+  const rg1 = makeRG('rg1', W, H, 0.88, 0.18, 0.62, 0.45, tertiary, [
+    { pos: 0.00, alpha: 0.32 }, { pos: 0.45, alpha: 0.12 }, { pos: 0.68, alpha: 0.00 },
   ]);
   const rg2 = makeRG('rg2', W, H, 0.12, 0.92, 0.50, 0.38, quaternary, [
-    { pos: 0.00, alpha: 0.12 }, { pos: 0.50, alpha: 0.05 }, { pos: 0.62, alpha: 0.00 },
+    { pos: 0.00, alpha: 0.22 }, { pos: 0.50, alpha: 0.08 }, { pos: 0.62, alpha: 0.00 },
   ]);
   const glowH = Math.round(H * 0.55);
   const rg3 = makeRG('rg3', W, glowH, 0.50, 0.00, 0.85, 0.70, primary, [
-    { pos: 0.00, alpha: 0.42 }, { pos: 0.35, alpha: 0.22 }, { pos: 0.70, alpha: 0.00 },
+    { pos: 0.00, alpha: 0.65 }, { pos: 0.35, alpha: 0.35 }, { pos: 0.70, alpha: 0.00 },
   ]);
   const rg4 = makeRG('rg4', W, glowH, 0.82, 0.00, 0.55, 0.55, secondary, [
-    { pos: 0.00, alpha: 0.30 }, { pos: 0.40, alpha: 0.12 }, { pos: 0.68, alpha: 0.00 },
+    { pos: 0.00, alpha: 0.50 }, { pos: 0.40, alpha: 0.20 }, { pos: 0.68, alpha: 0.00 },
   ]);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
