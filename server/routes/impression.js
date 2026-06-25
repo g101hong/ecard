@@ -22,7 +22,7 @@
 
 import { Router }             from 'express';
 import { analyzeImpression }  from '../../emotion-engine/index.js';
-import { collectVisitContext } from '../../reply-engine/visit-context.js';
+import { collectVisitContext } from '../../emotion-engine/visit-context.js';
 import { saveToSupabase }     from '../services/supabase-logger.js';
 
 const router = Router();
