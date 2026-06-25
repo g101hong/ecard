@@ -33,15 +33,17 @@ import { analyzeImpression,
          requestCard }     from './api.js';
 
 // emotion-colors — 서버 모듈 직접 import 불가 (빌드 도구 없음) → 인라인 구현
+// emotion-colors — svg-engine/emotion-colors.js 와 완전 동일한 수치로 통일
+// (웹화면과 저장이미지의 글로우 색상 일치)
 const EMOTION_BASE_COLOR = {
-  amazement: { h: 42,  s: 0.90, l: 0.58 },
-  peace:     { h: 200, s: 0.45, l: 0.62 },
-  vitality:  { h: 22,  s: 0.85, l: 0.55 },
-  nostalgia: { h: 32,  s: 0.55, l: 0.48 },
-  freshness: { h: 192, s: 0.70, l: 0.52 },
-  grandeur:  { h: 225, s: 0.50, l: 0.38 },
-  warmth:    { h: 30,  s: 0.80, l: 0.60 },
-  mystery:   { h: 270, s: 0.55, l: 0.42 },
+  warmth:    { h: 12,  s: 0.88, l: 0.58 }, // 코랄오렌지  — 온기·노을·포근
+  amazement: { h: 48,  s: 0.95, l: 0.55 }, // 황금앰버    — 경이·일출·장엄
+  vitality:  { h: 92,  s: 0.72, l: 0.45 }, // 초록라임    — 활기·에너지·약동
+  freshness: { h: 178, s: 0.75, l: 0.48 }, // 청록시안    — 청량·맑은 바다
+  peace:     { h: 212, s: 0.55, l: 0.58 }, // 하늘청      — 평온·고요·하늘
+  grandeur:  { h: 252, s: 0.60, l: 0.40 }, // 딥인디고    — 웅장·심원·압도
+  mystery:   { h: 298, s: 0.58, l: 0.42 }, // 마젠타보라  — 신비·몽환·깊이
+  nostalgia: { h: 342, s: 0.50, l: 0.50 }, // 더스티로즈  — 그리움·옛 추억
 };
 
 function _hsl(h, s, l) {
@@ -64,14 +66,14 @@ function extractDominantColors(emotionScores) {
     .slice(0, 4);
   if (sorted[0].score === 0) return null;
   const colors = sorted.map(({ emotion, score }) => {
-    const base = EMOTION_BASE_COLOR[emotion];
+    const base      = EMOTION_BASE_COLOR[emotion];
     const intensity = clamp(score / 100, 0, 1);
     const s = clamp(base.s * (0.75 + intensity * 0.25), 0.25, 1.0);
     return {
       emotion, score,
-      dark:  _hsl(base.h, s * 0.70, clamp(base.l * 0.35, 0.10, 0.28)),
-      mid:   _hsl(base.h, s,        clamp(base.l * 0.80, 0.30, 0.65)),
-      light: _hsl(base.h, s * 0.60, clamp(base.l * 1.30, 0.65, 0.88)),
+      dark:  _hsl(base.h, s * 0.65, clamp(base.l * 0.35, 0.08, 0.28)),
+      mid:   _hsl(base.h, s,        clamp(base.l * 0.85, 0.30, 0.68)),
+      light: _hsl(base.h, s * 0.55, clamp(base.l * 1.35, 0.65, 0.90)),
     };
   });
   return {
