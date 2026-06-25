@@ -331,7 +331,7 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null, c
 }
 
 // =============================================================================
-// ⑦ composeCardPNG — 기존 시그니처 유지 (호출부 수정 불필요)
+// ⑦ composeCardPNG
 // =============================================================================
 
 export async function composeCardPNG(
