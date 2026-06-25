@@ -1,18 +1,23 @@
 /**
  * @fileoverview svg-engine/png-exporter.js
- * @version 4.1.0 — dominantEmotion 외부 확정값 우선 사용
+ * @description  경승지 이미지 + 답글 카드 PNG 합성
  *
- * 핵심 변경:
- *   dominantEmotion 파라미터를 외부에서 받는 방식 폐기.
- *   buildReplyCardBuffer() 안에서 emotionScores로 직접 dominant를 계산.
- *   외부 파라미터 전달 누락 문제를 구조적으로 제거.
+ * 레이아웃:
+ *   ┌──────────────────────────┐
+ *   │  경승지 이미지            │  (sharp)
+ *   ├──────────────────────────┤
+ *   │  답글 카드                │  (@napi-rs/canvas — TTF 직접 로드)
+ *   │   ────  황금 구분선       │
+ *   │   main  감성별 폰트       │
+ *   │   place 감성별 폰트       │
+ *   │   ULSAN tagline           │
+ *   │   날짜·시분 (KST)         │
+ *   └──────────────────────────┘
  *
- *   EMOTION_PRIORITY (emotion-fonts.js와 동일 순서) 를 이 파일에 직접 선언.
- *   pickDominantLocal(emotionScores) → dominant 감성 키 반환.
- *   resolveFontFamily(emotionScores) → dominant 감성으로 폰트 결정.
- *
- *   외부 API(composeCardPNG, generateCardPNG) 시그니처는 기존과 동일하게 유지.
- *   (기존 호출부 수정 불필요)
+ * 폰트 결정 우선순위:
+ *   1. 외부에서 확정된 dominantEmotion이 있으면 해당 폰트 사용
+ *   2. 없으면 emotionScores에서 직접 계산
+ *   → 화면(app.js)과 저장 PNG의 폰트 일치 보장
  */
 
 'use strict';
@@ -221,8 +226,7 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 // =============================================================================
 
 function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null, createdAt = null) {
-  // emotionScores에서 직접 결정 — 외부 파라미터 없음
-  // [v4.1 fix] dominantEmotion이 외부에서 확정된 경우 직접 사용, 없으면 emotionScores 재계산
+  // dominantEmotion이 외부에서 확정된 경우 직접 사용, 없으면 emotionScores로 계산
   const fontFamily = (dominantEmotion && EMOTION_FONT_MAP[dominantEmotion])
     ? (() => {
         ensureFonts();
@@ -367,7 +371,7 @@ export async function composeCardPNG(
     quaternary = '#888888',
   } = colorResult ?? {};
 
-  // emotionScores를 직접 전달 — buildReplyCardBuffer 내부에서 dominant 결정
+  // buildReplyCardBuffer에 dominantEmotion 전달 — 폰트 확정값 우선 사용
   const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores, dominantEmotion, createdAt);
 
   const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary, tertiary, quaternary);
@@ -391,15 +395,17 @@ export async function composeCardPNG(
 }
 
 // =============================================================================
-// ⑧ generateCardPNG — 기존 시그니처 유지
+// ⑧ generateCardPNG — svg-engine/index.js에서 실제 호출하는 진입점
 // =============================================================================
 
 export async function generateCardPNG({
   emotionScores,
   spotIndex,
   outputPath,
-  size  = 1200,
-  reply = null,
+  size            = 1200,
+  reply           = null,
+  dominantEmotion = null,
+  createdAt       = null,
 }) {
   const t0 = Date.now();
 
@@ -418,10 +424,18 @@ export async function generateCardPNG({
     throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
   }
 
-  const savedPath = await composeCardPNG(sceneImageBuf, outputPath, size, reply, emotionScores, dominantEmotion);
+  const savedPath = await composeCardPNG(
+    sceneImageBuf,
+    outputPath,
+    size,
+    reply,
+    emotionScores,
+    dominantEmotion,
+    createdAt,
+  );
 
   console.info(
-    `[svg-engine] PNG 완료 | spotIndex=${spotIndex} | size=${size}px | ${Date.now() - t0}ms`
+    `[png-exporter] PNG 완료 | spotIndex=${spotIndex} | size=${size}px | ${Date.now() - t0}ms`
   );
 
   return savedPath;

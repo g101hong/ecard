@@ -337,7 +337,7 @@ export function applyDeltaToHex(currentHex, panelIndex, gp, diversitySeed = 0) {
   const w   = PANEL_WEIGHTS[i];
   const cur = hexToHsl(currentHex);
 
-  // ── 방안B: 원본 색 특성 기반 보호 스케일링 ──────────────────────
+  // ── 원본 색 특성 기반 보호 스케일링 ──────────────────────
   //
   // ① Hue 보호 — 원본 채도가 낮을수록 색조 이동을 줄인다.
   //    무채색(s≈0)에서 Hue를 크게 이동하면 완전히 다른 색이 나오므로
