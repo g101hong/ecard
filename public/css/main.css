@@ -618,7 +618,7 @@ body {
   position: relative;
   /* 방안4: 방사형 빛 번짐 — 우상단(주색) + 좌하단(보조색) */
   background:
-    radial-gradient(ellipse 62% 45% at 88% 18%,
+    radial-gradient(ellipse 62% 45% at 88% 50%,
       var(--reply-main, transparent) 0%,
       transparent 68%),
     radial-gradient(ellipse 50% 38% at 12% 92%,
