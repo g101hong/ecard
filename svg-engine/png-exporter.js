@@ -192,7 +192,7 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 
   // 방사형 빛: rg1 우상단 cy 0.08→0.18 (조금 아래로)
   // 투명도: rg1 0.18→0.32 / rg2 0.12→0.22 / rg3 0.42→0.65 / rg4 0.30→0.50
-  const rg1 = makeRG('rg1', W, H, 0.88, 0.18, 0.62, 0.45, tertiary, [
+  const rg1 = makeRG('rg1', W, H, 0.88, 0.50, 0.62, 0.45, tertiary, [
     { pos: 0.00, alpha: 0.32 }, { pos: 0.45, alpha: 0.12 }, { pos: 0.68, alpha: 0.00 },
   ]);
   const rg2 = makeRG('rg2', W, H, 0.12, 0.92, 0.50, 0.38, quaternary, [
