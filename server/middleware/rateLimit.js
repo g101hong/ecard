@@ -11,7 +11,7 @@
  *
  * 라우트별 제한 차등 적용:
  *
- *   /api/impression  ← Gemini API 2회 호출 → 가장 엄격
+ *   /api/impression  ← Gemini API 1회 호출 → 가장 엄격
  *   /api/card        ← 이미지 생성 (CPU 사용) → 중간
  *   /api/*           ← 나머지 일반 API → 여유
  *
@@ -47,7 +47,7 @@ const commonOptions = {
 };
 
 // ── /api/impression 전용 제한 ─────────────────────────────────────
-// Gemini API 2회 호출 → 가장 엄격하게 제한
+// Gemini API 1회 호출 → 가장 엄격하게 제한
 export const impressionLimiter = rateLimit({
   ...commonOptions,
   max:     MAX_IMPRESSION,

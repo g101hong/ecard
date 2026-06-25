@@ -18,6 +18,17 @@
  *
  *   validateImpression  POST /api/impression 전용
  *   validateCard        POST /api/card 전용
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 참고
+ * ─────────────────────────────────────────────────────────────────
+ *
+ *   현재 impression.js, card.js 는 각 라우트 내부에서 직접 검증하므로
+ *   이 미들웨어는 등록되어 있지 않다.
+ *   라우트 앞단으로 검증을 분리하고 싶을 때 api.js에 연결하면 된다:
+ *
+ *     router.use('/impression', validateImpression, impressionRouter);
+ *     router.use('/card',       validateCard,       cardRouter);
  */
 
 'use strict';
