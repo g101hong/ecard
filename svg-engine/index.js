@@ -3,16 +3,18 @@
  * @module svg-engine
  * @version 3.0.0
  *
- * [v3.0 변경] dominantEmotion 전달 — 폰트 불일치 최종 수정
+ * 현재 동작 방식 (정적 이미지 기반)
  * ─────────────────────────────────────────────────────────────────
  *
- *   generateCardPNG()가 dominantEmotion 파라미터를 받아
- *   composeCardPNG()에 전달한다.
+ *   generateCardPNG()가 spotIndex에 해당하는 정적 경승지 이미지
+ *   (assets/scenes/ulsan_scene_XX.jpg)를 읽어 PNG 카드를 합성한다.
  *
- *   이전까지 svg-engine/index.js가 dominantEmotion을 누락하고
- *   composeCardPNG(imageBuffer, outputPath, size, reply, emotionScores)
- *   5개 인자만 전달하여 폰트가 항상 FALLBACK_FONT(warmth)로 떨어지던
- *   문제를 수정한다.
+ *   파이프라인:
+ *     ulsan_scene_XX.jpg
+ *           ↓
+ *     composeCardPNG()   이미지 + 답글 카드 합성 (sharp + @napi-rs/canvas)
+ *           ↓
+ *     /output/{uuid}.png
  */
 
 'use strict';
@@ -24,7 +26,6 @@ import {
   SVG_ID_MAP,
   SPOT_NAMES,
 } from './color-calculator.js';
-import { patchSVG, validateSvgAssets, debugPrintPatch, clearSvgCache } from './svg-patcher.js';
 import { composeCardPNG } from './png-exporter.js';
 
 // =============================================================================
@@ -46,7 +47,6 @@ export const SVG_PANEL_IDS = Object.freeze(
 // =============================================================================
 
 export { computeGlobalParams, applyDeltaToHex, colorTempToFilter };
-export { patchSVG, validateSvgAssets, debugPrintPatch, clearSvgCache };
 export { composeCardPNG };
 
 // =============================================================================
@@ -54,20 +54,17 @@ export { composeCardPNG };
 // =============================================================================
 
 /**
- * 정적 경승지 이미지 읽기 → PNG 변환 → 답글 카드 합성 → 파일 저장.
- *
- * [v3.0] dominantEmotion 파라미터 추가 및 composeCardPNG에 전달.
- *        이전 버전에서 이 함수가 dominantEmotion을 누락하여
- *        항상 FALLBACK_FONT(warmth)로 렌더되던 문제 수정.
+ * 정적 경승지 이미지 읽기 → PNG 카드 합성 → 파일 저장.
  *
  * @param {Object}      options
- * @param {Object}      options.emotionScores
- * @param {number}      options.spotIndex         0~11
- * @param {string}      options.outputPath
- * @param {number}      [options.size=1200]
- * @param {Object|null} [options.reply]
- * @param {string}      options.dominantEmotion   확정된 dominant 감성 키 (필수)
- * @returns {Promise<string>}
+ * @param {Object}      options.emotionScores     8차원 감성 점수 (0~100)
+ * @param {number}      options.spotIndex         경승지 인덱스 (0~11)
+ * @param {string}      options.outputPath        저장 경로
+ * @param {number}      [options.size=1200]       출력 이미지 너비(px)
+ * @param {Object|null} [options.reply]           { main, place, tagline }
+ * @param {string}      [options.dominantEmotion] 확정된 dominant 감성 키
+ * @param {string|null} [options.createdAt]       KST 날짜·시분 "YYYY.MM.DD HH:mm"
+ * @returns {Promise<string>}  저장된 PNG 파일 경로
  */
 export async function generateCardPNG({
   emotionScores,
@@ -76,7 +73,7 @@ export async function generateCardPNG({
   size            = 1200,
   reply           = null,
   dominantEmotion = null,
-  createdAt       = null,          // KST 날짜·시분 "YYYY.MM.DD HH:mm"
+  createdAt       = null,
 }) {
   const t0 = Date.now();
 
@@ -95,7 +92,6 @@ export async function generateCardPNG({
     throw new Error(`경승지 이미지 로드 실패 (ulsan_scene_${idx}.jpg): ${err.message}`);
   }
 
-  // [v3.0] dominantEmotion 전달 — 6번째 인자 추가
   const savedPath = await composeCardPNG(
     sceneImageBuf,
     outputPath,
@@ -103,7 +99,7 @@ export async function generateCardPNG({
     reply,
     emotionScores,
     dominantEmotion,
-    createdAt,         // KST 날짜·시분
+    createdAt,
   );
 
   console.info(
@@ -123,12 +119,8 @@ export default {
   computeGlobalParams,
   applyDeltaToHex,
   colorTempToFilter,
-  patchSVG,
   composeCardPNG,
   generateCardPNG,
-  validateSvgAssets,
-  debugPrintPatch,
-  clearSvgCache,
   SVG_ID_MAP,
   SVG_ID_TO_EMOTION_IDX,
   SVG_PANEL_IDS,
