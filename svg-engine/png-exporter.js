@@ -220,7 +220,7 @@ function buildReplyBgSVG(W, H, primary, secondary, tertiary, quaternary) {
 // ⑥ 텍스트 레이어 — emotionScores로 직접 폰트 결정
 // =============================================================================
 
-function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
+function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null, createdAt = null) {
   // emotionScores에서 직접 결정 — 외부 파라미터 없음
   // [v4.1 fix] dominantEmotion이 외부에서 확정된 경우 직접 사용, 없으면 emotionScores 재계산
   const fontFamily = (dominantEmotion && EMOTION_FONT_MAP[dominantEmotion])
@@ -277,7 +277,9 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
   const placeBlock = placeLines.length * lhPlace;
   const tagY       = placeY + placeBlock + gapBlock;
   const tagBlock   = tagLines.length * lhTag;
-  const H          = tagY + tagBlock + padBot;
+  // 날짜 영역 높이 사전 확보
+  const fDateH  = createdAt ? Math.round(W * 0.0260 * SCALE * 1.45 + W * 0.025 * SCALE) : 0;
+  const H          = tagY + tagBlock + fDateH + padBot;
 
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
@@ -308,6 +310,19 @@ function buildReplyCardBuffer(reply, W, emotionScores, dominantEmotion = null) {
   ctx.letterSpacing = '2px';
   fillWrappedText(ctx, tagText, px, tagY, maxTextW, lhTag);
 
+  // ── 날짜·시분 (tagline 하단) ──────────────────────────────────
+  if (createdAt) {
+    const fDate  = Math.round(W * 0.0260 * SCALE);
+    const lhDate = Math.round(fDate * 1.45);
+    const dateY  = tagY + tagBlock + Math.round(W * 0.025 * SCALE);
+    ctx.fillStyle     = CFG.COLOR_PLACE;
+    ctx.font          = `${fDate}px '${fontFamily}'`;
+    ctx.letterSpacing = '1px';
+    ctx.globalAlpha   = 0.65;
+    fillWrappedText(ctx, createdAt, px, dateY, maxTextW, lhDate);
+    ctx.globalAlpha   = 1;
+  }
+
   return { buf: canvas.toBuffer('image/png'), cardH: H };
 }
 
@@ -321,7 +336,8 @@ export async function composeCardPNG(
   size             = CFG.DEFAULT_WIDTH,
   reply            = null,
   emotionScores    = null,
-  dominantEmotion  = null,   // [v4.1 fix] index.js 전달값 수신 — 자체 재계산 우선순위 낮춤
+  dominantEmotion  = null,
+  createdAt        = null,   // KST 날짜·시분 "YYYY.MM.DD HH:mm"
 ) {
   if (!imageBuffer?.length) throw new Error('imageBuffer가 비어있습니다.');
   if (!outputPath)          throw new Error('outputPath가 없습니다.');
@@ -352,7 +368,7 @@ export async function composeCardPNG(
   } = colorResult ?? {};
 
   // emotionScores를 직접 전달 — buildReplyCardBuffer 내부에서 dominant 결정
-  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores, dominantEmotion);
+  const { buf: textBuf, cardH } = buildReplyCardBuffer(reply, imgW, emotionScores, dominantEmotion, createdAt);
 
   const bgSvgStr = buildReplyBgSVG(imgW, cardH, primary, secondary, tertiary, quaternary);
   const bgBuf    = await sharp(Buffer.from(bgSvgStr, 'utf-8'))

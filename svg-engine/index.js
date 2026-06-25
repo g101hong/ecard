@@ -75,7 +75,8 @@ export async function generateCardPNG({
   outputPath,
   size            = 1200,
   reply           = null,
-  dominantEmotion = null,          // [v3.0] 필수 — card.js가 항상 확정값 전달
+  dominantEmotion = null,
+  createdAt       = null,          // KST 날짜·시분 "YYYY.MM.DD HH:mm"
 }) {
   const t0 = Date.now();
 
@@ -101,7 +102,8 @@ export async function generateCardPNG({
     size,
     reply,
     emotionScores,
-    dominantEmotion,   // ← 이전 버전에서 이 인자가 빠져 있었음
+    dominantEmotion,
+    createdAt,         // KST 날짜·시분
   );
 
   console.info(
