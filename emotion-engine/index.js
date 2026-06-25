@@ -1,37 +1,26 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 파이프라인 통합 진입점
  * @module emotion-engine
- * @version 3.0.0
  *
- * [v3.0 변경] 방안A — 짧은 소감 단락회로 (Short-Circuit) 추가
+ * ─────────────────────────────────────────────────────────────────
+ * 처리 파이프라인
  * ─────────────────────────────────────────────────────────────────
  *
- *   짧고 정보가 부족한 소감(charCount ≤ 10 AND quality < 70)에 대해
- *   AI(Gemini) 호출 없이 diversitySeed 기반 결과를 즉시 반환한다.
+ *   STAGE 1  preprocessor       입력 전처리·품질 평가·언어 감지
+ *   STAGE 2  ai-extractor       Gemini 단일 호출 (감성 8차원 + 3단 답글)
+ *   STAGE 2.5 panel-weights     감성 반응 행렬 적용 (경승지별 가중치)
+ *   STAGE 3  param-synthesizer  색채 파라미터 합성
+ *   STAGE 4  panel-individualizer 패널별 개별화
+ *   STAGE 4.5 panel-weights     절기·시간·동행자 맥락 보정
+ *   STAGE 5  diversity-guard    다양성 보장
  *
- *   변경 사항:
- *     1. SHORT_CIRCUIT 상수 추가
- *        - MAX_CHAR_COUNT: 10   (공백 제외 글자 수 기준)
- *        - MAX_QUALITY:    70   (품질 점수 기준)
- *
- *     2. analyzeImpression() — 기존 품질 미달 폴백 이후에 단락회로 판단 추가
- *        - 조건: charCount ≤ 10 AND quality.score < 70
- *        - 경로: handleFallback(INPUT_TOO_SHORT) → TIER 3 (SEED_ONLY)
- *        - visitCtx는 단락회로에도 전달 (계절·시간 정보 활용)
- *        - meta.shortCircuit = true 플래그 추가
- *
- *   하위 호환:
- *     - SHORT_CIRCUIT 조건 미해당 시 기존 동작과 완전히 동일
- *     - formatECardResult() 변경 없음
- *     - 기존 품질 미달(request_more) 폴백은 그대로 유지
- *
- * [v2.0 변경] 방안B 단일 호출 통합 (유지)
+ * ─────────────────────────────────────────────────────────────────
+ * 단락회로 (Short-Circuit)
  * ─────────────────────────────────────────────────────────────────
  *
- *   analyzeImpression()에 visitCtx 옵션 추가.
- *   impression.js가 collectVisitContext()를 먼저 실행한 뒤
- *   결과를 여기에 전달하면, extractEmotions()가 단일 Gemini 호출로
- *   감성 분석 + E-Card 3단 답글을 동시에 반환한다.
+ *   짧고 정보가 부족한 소감(charCount ≤ 10 AND quality.score < 70)은
+ *   Gemini 호출 없이 diversitySeed 기반 결과를 즉시 반환한다.
+ *   meta.shortCircuit = true 로 식별 가능.
  */
 
 'use strict';
@@ -45,14 +34,10 @@ import { extractEmotions }                       from './ai-extractor.js';
 import { synthesizeColorParams,
          colorTempToRGBTint }                    from './param-synthesizer.js';
 import { individualizePanels    as individualizeAllPanels,
-         toShaderUniforms       as toThreeJSUniforms,
          SPOT_BASE_PALETTES     as PANEL_CONFIGS }       from './panel-individualizer.js';
-import { guardDiversity,
-         computeDiversityScore }                 from './diversity-guard.js';
+import { guardDiversity }                 from './diversity-guard.js';
 import { handleFallback,
          withFallback,
-         withFallbackSync,
-         isFallback,
          FALLBACK_TIER }                   from './fallback-handler.js';
 import { SPOTS,
          buildExtendedPalette,
@@ -134,9 +119,6 @@ const SHORT_CIRCUIT = Object.freeze({
 
 /**
  * 파이프라인 처리 결과를 ECardResult 형식으로 포맷한다.
- *
- * [v2.0] typography에 reply 필드 추가
- * [v3.0] meta에 shortCircuit 플래그 추가
  */
 function formatECardResult(data) {
   const {
@@ -144,7 +126,7 @@ function formatECardResult(data) {
     panels, guardReport, spotIndex, t0,
     tier = FALLBACK_TIER.NORMAL,
     userMessage = null,
-    shortCircuit = false,   // [v3.0] 단락회로 여부
+    shortCircuit = false,
   } = data;
 
   const spot         = getSpotByIndex(spotIndex);
@@ -167,7 +149,7 @@ function formatECardResult(data) {
     dominantEmotion: extraction.dominantEmotion   ?? 'amazement',
     spotMatchReason: extraction.spotMatchReason   ?? '',
 
-    // ── [v2.0] E-Card 3단 답글 ──────────────────────────────────
+    // ── E-Card 3단 답글 ──────────────────────────────────────────
     reply: extraction.reply ?? {
       main:    '울산이 당신에게 건넨 소중한 순간',
       place:   '울산의 아름다운 풍경이 오래도록 당신의 기억 속에 남기를 바랍니다.',
@@ -212,7 +194,7 @@ function formatECardResult(data) {
     guardReport,
     tier,
     isFallback:    tier > FALLBACK_TIER.NORMAL,
-    shortCircuit,                                 // [v3.0] 단락회로 여부
+    shortCircuit,
     userMessage:   tier > FALLBACK_TIER.NORMAL ? (userMessage ?? null) : null,
   };
 
@@ -241,9 +223,6 @@ function formatECardResult(data) {
 
 /**
  * 방문객 소감을 받아 E-Card 생성에 필요한 모든 데이터를 반환한다.
- *
- * [v3.0] 단락회로 추가 — charCount ≤ 10 AND quality < 70 시 AI 호출 생략
- * [v2.0] options.visitCtx 파라미터 추가
  *
  * @param {string}  rawText               방문객 소감 원문
  * @param {Object}  [options]             옵션
@@ -293,7 +272,7 @@ export async function analyzeImpression(rawText, options = {}) {
   }
 
   // ────────────────────────────────────────────────────────────────
-  // [v3.0] 단락회로 판단
+  // 단락회로 판단
   //
   // 조건: charCount ≤ SHORT_CIRCUIT.MAX_CHAR_COUNT (10)
   //   AND quality.score < SHORT_CIRCUIT.MAX_QUALITY (70)
@@ -370,13 +349,12 @@ export async function analyzeImpression(rawText, options = {}) {
       spotIndex:    scSpotIndex,
       t0,
       tier:         FALLBACK_TIER.SEED_ONLY,
-      shortCircuit: true,              // [v3.0] 단락회로 플래그
+      shortCircuit: true,
     });
   }
 
   // ────────────────────────────────────────────────────────────────
   // STAGE 2: AI 종합 감성 분석 + reply 생성 (단일 Gemini 호출)
-  // [v2.0] visitCtx를 extractEmotions에 전달 → reply까지 한 번에 반환
   // ────────────────────────────────────────────────────────────────
   let extraction;
   try {
@@ -558,7 +536,7 @@ export function debugPipeline(result) {
 
   const tierLabels = ['✅ NORMAL','⚠️  PARTIAL','🟡 TEMPLATE','🔴 SEED_ONLY'];
   console.log('상태:', tierLabels[result.tier]);
-  // [v3.0] 단락회로 여부 출력
+  // 단락회로 여부 출력
   if (result.meta.shortCircuit) console.log('⚡ 단락회로 적용 (AI 호출 없음)');
   console.log('처리 시간:', result.meta.processingTimeMs + 'ms');
   console.log('언어:', result.meta.language, '| 입력길이:', result.meta.inputLength);
@@ -605,5 +583,5 @@ export default {
   quickSynthesize,
   validateResult,
   debugPipeline,
-  SHORT_CIRCUIT,   // [v3.0] 테스트·모니터링에서 참조 가능하도록 노출
+  SHORT_CIRCUIT,   // 테스트·모니터링에서 참조 가능하도록 노출
 };
