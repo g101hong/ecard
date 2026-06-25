@@ -1,34 +1,12 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — AI 종합 분석 모듈
  * @module emotion-engine/ai-extractor
- * @version 4.0.0
  *
- * ─────────────────────────────────────────────────────────────────
- * [v4.0 변경] 방안B 단일 호출 통합
- * ─────────────────────────────────────────────────────────────────
- *
- *   reply-engine의 두 번째 Gemini 호출을 제거하고
- *   이 모듈의 단일 호출에서 감성 분석 + E-Card 3단 답글을 동시에 생성한다.
- *
- *   변경 사항:
- *     1. buildUserPrompt(pre, visitCtx?)
- *        - visitCtx 파라미터 추가 (collectVisitContext 결과)
- *        - 방문 시점 컨텍스트 섹션 신규 추가 (절기·계절·시간대·동행자)
- *        - 출력 스키마에 "reply" 블록 추가 (main / place / tagline)
- *
- *     2. validateAndSanitize()
- *        - reply 블록 유효성 검증 및 기본값 보정 추가
- *
- *     3. generateFallback()
- *        - reply 기본값 포함
- *
- *   하위 호환:
- *     - visitCtx 미전달 시 기존 동작과 동일 (visitCtx 섹션 생략)
- *     - ExtractionResult에 reply 필드가 추가될 뿐, 기존 필드 변경 없음
- *
- * ─────────────────────────────────────────────────────────────────
  * PIPELINE STAGE 2 : SlimPreprocessed → Full Emotion Analysis + Reply
  * ─────────────────────────────────────────────────────────────────
+ *
+ *   단일 Gemini 호출로 감성 8차원 분석 + E-Card 3단 답글(reply)을 동시에 생성.
+ *   visitCtx(절기·계절·시간대·동행자)를 프롬프트에 포함하여 맥락 기반 답글 생성.
  */
 
 'use strict';
@@ -43,11 +21,10 @@ import { SYSTEM_PROMPT } from './prompts/system-prompt.js';
 const API_CONFIG = Object.freeze({
   ENDPOINT:    'https://generativelanguage.googleapis.com/v1beta/models',
   MODEL:       'gemini-2.5-flash',
-  // [v4.0] reply 3단이 추가되므로 토큰 여유 확보 (4096 → 5120)
   MAX_TOKENS:  5120,
   MAX_RETRIES: 2,
   RETRY_DELAY: 1000,
-  TIMEOUT_MS:  20000,  // reply 포함으로 응답이 소폭 길어질 수 있어 15→20초
+  TIMEOUT_MS:  20000,
 });
 
 // =============================================================================
@@ -114,7 +91,7 @@ export function buildUserPrompt(pre, visitCtx = null) {
     .join('\n');
 
   // ── 섹션 G: 출력 JSON 스키마 ─────────────────────────────────────
-  // [v4.0] reply 블록 추가
+  // ── 섹션 G: 출력 JSON 스키마 (reply 포함) ─────────────────────────
   const outputSchema = `
 ## 분석 및 출력 요청
 
@@ -213,7 +190,7 @@ reply.tagline : "ULSAN — " + 4~8자 한글 태그라인
     metaSection,
     reliabilityNote,
     emojiInstruction,
-    visitSection,        // [v4.0] 방문 시점 컨텍스트 섹션
+    visitSection,
     impressionSection,
     outputSchema,
   ].filter(Boolean).join('\n');
@@ -313,7 +290,6 @@ function parseAIResponse(rawResponse) {
 
 /**
  * 파싱된 AI 응답의 필수 필드를 검증하고 범위를 보정한다.
- * [v4.0] reply 블록 검증 추가
  */
 function validateAndSanitize(parsed) {
   const errors = [];
@@ -373,7 +349,7 @@ function validateAndSanitize(parsed) {
     errors.push('contextAnalysis 기본값 적용');
   }
 
-  // ── [v4.0] reply 블록 검증 및 보정 ───────────────────────────────
+  // ── reply 블록 검증 및 보정 ────────────────────────────────────────
   if (!p.reply || typeof p.reply !== 'object') {
     // reply 블록 자체가 없으면 responseText를 main으로 대체
     p.reply = _buildFallbackReply(p);
@@ -430,7 +406,6 @@ function _buildFallbackReply(p) {
 
 /**
  * API 실패 또는 파싱 오류 시 기본 응답을 생성한다.
- * [v4.0] reply 기본값 포함
  */
 function generateFallback(pre) {
   const seed      = pre.diversitySeed % 12;
@@ -444,7 +419,6 @@ function generateFallback(pre) {
     zh: `感谢您来访蔚山！希望蔚山的美景长留心中。期待再次相见！`,
   };
 
-  // [v4.0] 폴백에도 reply 포함
   const FALLBACK_REPLY = {
     main:    '울산이 당신에게 건넨 소중한 순간',
     place:   '울산의 아름다운 풍경이 오래도록 당신의 기억 속에 남기를 바랍니다.',
@@ -476,7 +450,7 @@ function generateFallback(pre) {
     primaryEmotion:   '울산의 추억',
     keywords:         ['자연', '평화', '감동', '힐링', '울산'],
     responseText:     FALLBACK_MESSAGES[pre.language] || FALLBACK_MESSAGES.ko,
-    reply:            FALLBACK_REPLY,   // [v4.0]
+    reply:            FALLBACK_REPLY,
     _isFallback:      true,
   };
 }
@@ -487,8 +461,6 @@ function generateFallback(pre) {
 
 /**
  * 전처리된 입력을 받아 Gemini AI로 종합 감성 분석 + reply 생성을 수행한다.
- *
- * [v4.0] visitCtx 파라미터 추가
  *
  * @param {import('./preprocessor.js').SlimPreprocessed} pre
  * @param {Object|null} [visitCtx]  collectVisitContext() 반환값
@@ -508,7 +480,6 @@ export async function extractEmotions(pre, visitCtx = null) {
     };
   }
 
-  // 프롬프트 생성 — [v4.0] visitCtx 전달
   const userPrompt = buildUserPrompt(pre, visitCtx);
   let rawResponse, parsed, sanitized;
 
@@ -586,7 +557,6 @@ export function debugPrintExtraction(result) {
   console.log('🏷️ 키워드:', result.keywords?.join(' · '));
   console.log('💬 responseText:', result.responseText);
 
-  // [v4.0] reply 출력
   if (result.reply) {
     console.group('📝 E-Card 3단 답글 (reply)');
     console.log('main   :', result.reply.main);
