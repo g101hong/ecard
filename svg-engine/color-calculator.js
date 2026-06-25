@@ -4,24 +4,14 @@
  * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * v2 변경 사항 (v1 BASE_PALETTES 상수 기준 → SVG 현재 색상 기준)
+ * 역할
  * ─────────────────────────────────────────────────────────────────
  *
- *   v1: BASE_PALETTES 상수(main/sub/acc hex)에서 매번 동일하게 시작
- *       → grad-spot-XX-main/sub/acc 3개 고정 역할(stop)만 변경
+ *   emotionScores(8차원, 0~100)를 받아 6개의 색채 파라미터(GlobalColorParams)를
+ *   계산하고, 각 hex 색상에 감성 delta를 적용한다.
  *
- *   v2: SVG 원본 파일(assets/stained-glass.svg)에 기록된
- *       "현재 색상"을 출발점(HSL)으로 사용
- *       → id가 'spot-{idx}-{n}' (idx:00~11, n:1,2,3...) 형식인
- *         모든 요소(<stop> 또는 도형)를 대상으로,
- *         main/sub/acc 역할 구분 없이 동일한 감성 delta를 적용
- *       → 패널당 색상 요소 개수는 가변(SVG에서 자동 탐색)
- *
- *   "SVG 현재 색상"은 항상 *원본* assets/stained-glass.svg에서 읽으며
- *   (svg-patcher.js가 매 요청마다 원본을 새로 읽고 결과는 별도 출력에만
- *   저장 — 원본 파일은 절대 덮어쓰지 않음), 따라서:
- *     - 결과는 결정론적 (같은 입력 → 같은 출력)
- *     - 누적 변경(이전 결과 위에 덧칠) 없음
+ *   현재 사용처: svg-engine/index.js → color-calculator 상수 재노출
+ *   (SVG_ID_MAP, SPOT_NAMES 등)
  *
  * ─────────────────────────────────────────────────────────────────
  * 계산 파이프라인
@@ -33,38 +23,28 @@
  *   GlobalColorParams (6개 색채 파라미터)
  *     ΔHue / ΔSat / ΔLight / ΔContrast / colorTemp / lightDir
  *         │
- *         ▼  STEP 2. applyDeltaToHex() — 요소별 현재 hex에 delta 적용
- *   요소별 최종 hex (색온도 틴트 포함)
- *         │
- *         ▼
- *   PanelElementColorResult[]  (패널당 가변 개수)
+ *         ▼  STEP 2. applyDeltaToHex() — hex에 delta 적용
+ *   최종 hex (색온도 틴트 포함)
  *
  * ─────────────────────────────────────────────────────────────────
  * 설계 원칙
  * ─────────────────────────────────────────────────────────────────
  *
- *   ① 색상 정의의 단일 진실 소스 = SVG 원본 파일
- *      (이 모듈은 BASE_PALETTES 같은 색상 상수를 갖지 않는다 —
- *       svg-patcher.js / 클라이언트가 SVG에서 읽은 현재 hex를
- *       이 모듈의 계산 함수에 전달한다)
- *
- *   ② PANEL_WEIGHTS(패널별 가중치)와 노이즈는 패널 인덱스(0~11)
- *      기준으로 유지 — 장소별 개성(가중치) + 입력별 유일성(노이즈)
- *
- *   ③ main/sub/acc 같은 색상 역할 구분 없음 —
- *      'spot-{idx}-{n}'의 모든 n에 동일한 delta(+패널 단위 노이즈) 적용
+ *   ① 색상 상수(BASE_PALETTES)를 갖지 않는다 — hex는 호출부에서 전달
+ *   ② PANEL_WEIGHTS로 패널별 개성 부여 + diversitySeed로 입력별 유일성 보장
+ *   ③ main/sub/acc 역할 구분 없음 — 동일 delta를 모든 색상 요소에 적용
  *
  * ─────────────────────────────────────────────────────────────────
- * 사용 방식 (svg-patcher.js / color-engine.js)
+ * 사용 방식
  * ─────────────────────────────────────────────────────────────────
  *
  *   const gp = computeGlobalParams(emotionScores);
  *
- *   // SVG에서 'spot-{idx}-{n}' 요소를 모두 찾아 반복:
+ *   // 색상 요소별로:
  *   for (const el of elements) {
  *     const currentHex = readColor(el);   // fill 또는 stop-color
  *     const newHex = applyDeltaToHex(currentHex, idx, gp, diversitySeed);
- *     writeColor(el, newHex);             // 같은 속성에 다시 적용
+ *     writeColor(el, newHex);
  *   }
  */
 
