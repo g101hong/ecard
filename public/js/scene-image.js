@@ -4,35 +4,30 @@
  * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
- * 배경
+ * 역할
  * ─────────────────────────────────────────────────────────────────
  *
- *   기존 svg-renderer.js는 SVG 패널(spot-XX) ID를 찾아 색상을 직접
- *   패치하는 방식이었으나, 이 방식은 더 이상 사용하지 않는다.
+ *   AI가 소감문을 분석해 산출한 emotion-engine 인덱스(spotIndex, 0~11)에
+ *   해당하는 사전 제작 정적 이미지(assets/scenes/ulsan_scene_XX.jpg)를
+ *   답글 화면 상단에 표시한다.
  *
- *   현재 방식: AI가 소감문을 분석해 emotion-engine 인덱스(spotIndex,
- *   0~11)를 산출하면, 그 인덱스에 해당하는 사전 제작된 정적 이미지
- *   파일(ulsan_scene_XX.jpg)을 답글화면 상단에 그대로 표시한다.
- *
- *   파일명의 XX는 emotion-engine spotIndex(0~11)와 1:1로 동일하다.
- *   (SVG의 spot-XX 패널 번호와는 다른 체계이므로 혼동 주의 —
- *    color-engine.js의 SVG_ID_MAP은 이 모듈과 무관하다.)
+ *   파일명 XX = emotion-engine spotIndex(0~11) (두 자리 제로패딩).
  *
  * ─────────────────────────────────────────────────────────────────
  * [emotion-engine spotIndex ↔ ulsan_scene 파일 매핑]
  *
  *   0  간절곶 일출              → ulsan_scene_00
- *   1  대왕암공원                → ulsan_scene_01
- *   2  강동 몽돌해변             → ulsan_scene_02
- *   3  장생포 고래문화마을       → ulsan_scene_03
- *   4  외고산 옹기마을           → ulsan_scene_04
- *   5  반구대 암각화             → ulsan_scene_05
- *   6  대운산 내원암 계곡        → ulsan_scene_06
- *   7  울산대교                  → ulsan_scene_07
- *   8  울산대공원                → ulsan_scene_08
- *   9  태화강 국가정원·십리대숲  → ulsan_scene_09
- *   10 신불산 억새평원           → ulsan_scene_10
- *   11 가지산 사계               → ulsan_scene_11
+ *   1  대왕암공원               → ulsan_scene_01
+ *   2  강동 몽돌해변            → ulsan_scene_02
+ *   3  장생포 고래문화마을      → ulsan_scene_03
+ *   4  외고산 옹기마을          → ulsan_scene_04
+ *   5  반구대 암각화            → ulsan_scene_05
+ *   6  대운산 내원암 계곡       → ulsan_scene_06
+ *   7  울산대교                 → ulsan_scene_07
+ *   8  울산대공원               → ulsan_scene_08
+ *   9  태화강 국가정원·십리대숲 → ulsan_scene_09
+ *   10 신불산 억새평원          → ulsan_scene_10
+ *   11 가지산 사계              → ulsan_scene_11
  *
  * ─────────────────────────────────────────────────────────────────
  * [공개 API]
