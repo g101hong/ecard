@@ -110,6 +110,8 @@ const elTextarea       = $('impression-text');
 const elCharCount      = $('char-count');
 const elSubmitBtn      = $('submit-btn');
 const elErrorMsg       = $('error-msg');
+const elErrorDuration  = $('error-duration');
+const elErrorCompanion = $('error-companion');
 const elLoading        = $('loading-overlay');
 const elKeywordChips   = $('keyword-chips');
 const elPrimaryEmotion = $('primary-emotion');
@@ -155,7 +157,7 @@ function showScreen(screen) {
 function setPhase(next) {
   phase = next;
   elLoading.classList.toggle('hidden', next !== 'loading');
-  elSubmitBtn.disabled = (next === 'loading' || next === 'colors' || elTextarea.value.trim().replace(/\s+/g, '').length < 8);
+  elSubmitBtn.disabled = (next === 'loading' || next === 'colors' || elTextarea.value.trim().replace(/\s+/g, '').length < 8 || !selectedDuration || !selectedCompanion);
   if (next === 'done') showScreen('result');
 }
 
@@ -200,6 +202,12 @@ function bindChipGroup(groupEl, onSelect) {
       chips.forEach((c) => c.classList.remove('is-selected'));
       chip.classList.add('is-selected');
       onSelect(input.value);
+      // 선택 즉시 해당 그룹 에러 숨김
+      if (groupEl === elDurationGroup && elErrorDuration)  { elErrorDuration.classList.add('is-hidden');  $('duration-field')?.classList.remove('field-group--error'); }
+      if (groupEl === elCompanionGroup && elErrorCompanion) { elErrorCompanion.classList.add('is-hidden'); $('companion-field')?.classList.remove('field-group--error'); }
+      // 버튼 활성화 재평가
+      const bare = elTextarea.value.replace(/\s+/g, '').length;
+      elSubmitBtn.disabled = (bare < 8 || phase === 'loading' || phase === 'colors' || !selectedDuration || !selectedCompanion);
     });
   });
 }
@@ -211,7 +219,7 @@ function bindChipGroup(groupEl, onSelect) {
 function onTextInput() {
   const bare = elTextarea.value.replace(/\s+/g, '').length;
   elCharCount.textContent = bare < 8 ? `${bare} · 8자 이상 입력 후 전송` : `${bare} · Ctrl+Enter로 전송`;
-  elSubmitBtn.disabled = (bare < 8 || phase === 'loading' || phase === 'colors');
+  elSubmitBtn.disabled = (bare < 8 || phase === 'loading' || phase === 'colors' || !selectedDuration || !selectedCompanion);
   hideError();
 }
 
@@ -222,6 +230,25 @@ function onTextInput() {
 async function onSubmit() {
   const text = elTextarea.value.trim();
   if (text.replace(/\s+/g, '').length < 8 || phase === 'loading' || phase === 'colors') return;
+
+  // 필수 선택 항목 검증
+  let hasError = false;
+  if (!selectedDuration) {
+    elErrorDuration?.classList.remove('is-hidden');
+    $('duration-field')?.classList.add('field-group--error');
+    hasError = true;
+  }
+  if (!selectedCompanion) {
+    elErrorCompanion?.classList.remove('is-hidden');
+    $('companion-field')?.classList.add('field-group--error');
+    hasError = true;
+  }
+  if (hasError) {
+    const firstError = $('duration-field')?.classList.contains('field-group--error')
+      ? $('duration-field') : $('companion-field');
+    firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
 
   hideError();
   setPhase('loading');
@@ -288,6 +315,12 @@ function onReset() {
   resetChipGroup(elCompanionGroup);
   selectedDuration  = null;
   selectedCompanion = null;
+
+  // 필수 항목 에러 초기화
+  elErrorDuration?.classList.add('is-hidden');
+  elErrorCompanion?.classList.add('is-hidden');
+  $('duration-field')?.classList.remove('field-group--error');
+  $('companion-field')?.classList.remove('field-group--error');
 
   resetSceneImage();
   document.querySelectorAll('.glow-layer').forEach(el => el.remove());
