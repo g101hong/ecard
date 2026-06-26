@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card — Gemini API 시스템 프롬프트
  * @module emotion-engine/prompts/system-prompt
- * @version 3.1.0
  *
  * 변경 사항 (v3.0 → v3.1):
  *
