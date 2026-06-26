@@ -616,7 +616,7 @@ body {
   gap: 18px;
   padding: 28px 24px 24px;
   position: relative;
-  /* 방안4: 방사형 빛 번짐 — 우상단(주색) + 좌하단(보조색) */
+  /* 방사형 빛 번짐 — 우상단(주색) + 좌하단(보조색) */
   background:
     radial-gradient(ellipse 62% 45% at 88% 50%,
       var(--reply-main, transparent) 0%,
@@ -627,7 +627,7 @@ body {
     linear-gradient(180deg, var(--ink-2) 0%, var(--ink-3) 100%);
 }
 
-/* ── 방안2: 상단 글로우 — reply-card::before ─────────────────────
+/* ── 상단 글로우 — reply-card::before ─────────────────────
  * glass-frame 하단에서 흘러내리는 빛.
  * reply-card 상단에 위치하므로 overflow clip 영향 없음.
  * JS가 .reply-card에 --glow-primary/secondary 를 주입.
@@ -663,7 +663,7 @@ body {
   z-index: 1;
 }
 
-/* ── 방안 2: 상단 글로우 ────────────────────────────────────────
+/* ── 상단 글로우 ────────────────────────────────────────
  * JS가 .screen--result 내에 .glow-layer div를 삽입하고
  * CSS 변수 --glow-primary/secondary/tertiary를 설정한다.
  * 이미지-카드 경계에 position:absolute로 걸쳐서
