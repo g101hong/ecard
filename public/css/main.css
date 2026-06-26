@@ -961,3 +961,22 @@ body {
     font-size: 22px;
   }
 }
+
+/* ── 필수 항목 표시 ────────────────────────────────────────────── */
+
+.required-mark {
+  color: var(--ember, #ff6635);
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.field-group--error .chip-grid {
+  border-radius: var(--radius-sm, 8px);
+  outline: 1.5px solid rgba(255, 102, 53, 0.55);
+  outline-offset: 4px;
+}
+
+.field-group--error .error-msg {
+  margin-top: 8px;
+}
