@@ -37,10 +37,10 @@
       <form id="impression-form" class="form" novalidate>
 
         <!-- 여행일정 -->
-        <div class="field-group">
+        <div class="field-group" id="duration-field">
           <div class="field-group__label">
             <span class="field-group__index">01</span>
-            <span class="field-group__title">여행은 며칠이었나요?</span>
+            <span class="field-group__title">여행은 며칠이었나요? <span class="required-mark" aria-hidden="true">*</span></span>
           </div>
           <div class="chip-grid" id="duration-group">
             <label class="chip" for="dur-day">
@@ -69,13 +69,14 @@
               <span>4박 이상</span>
             </label>
           </div>
+          <p id="error-duration" class="error-msg is-hidden" role="alert">숙박 일정을 선택해주세요.</p>
         </div>
 
         <!-- 여행동행 -->
-        <div class="field-group">
+        <div class="field-group" id="companion-field">
           <div class="field-group__label">
             <span class="field-group__index">02</span>
-            <span class="field-group__title">누구와 함께였나요?</span>
+            <span class="field-group__title">누구와 함께였나요? <span class="required-mark" aria-hidden="true">*</span></span>
           </div>
           <div class="chip-grid" id="companion-group">
             <label class="chip" for="comp-solo">
@@ -104,6 +105,7 @@
               <span>기타</span>
             </label>
           </div>
+          <p id="error-companion" class="error-msg is-hidden" role="alert">동행을 선택해주세요.</p>
         </div>
 
         <!-- 소감문 -->
@@ -117,6 +119,8 @@
               id="impression-text"
               name="impression"
               maxlength="500"
+              lang="ko"
+              inputmode="text"
               placeholder="예) 간절곶에서 본 새벽 일출이 정말 잊을 수 없었어요. 가족들과 함께 본 하늘이 황금빛으로 물드는 순간, 마음이 뭉클했습니다."
               required
             ></textarea>
