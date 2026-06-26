@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 답글 엔진 — 24절기 상수 및 유틸리티
  * @module emotion-engine/constants/solar-terms
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * 역할

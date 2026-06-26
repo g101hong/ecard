@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 패널 가중치 상수
  * @module emotion-engine/constants/panel-weights
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * Single Source of Truth : 울산 12경 패널별 감성 반응 가중치

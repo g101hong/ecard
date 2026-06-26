@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 울산 12경 전용 색상 팔레트 상수
  * @module emotion-engine/constants/spot-palettes
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * Single Source of Truth : 울산 12경 색상 데이터
