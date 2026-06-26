@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 패널 개별화 모듈
  * @module emotion-engine/panel-individualizer
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * PIPELINE STAGE 4 : GlobalColorParams → 12 PanelColorParams

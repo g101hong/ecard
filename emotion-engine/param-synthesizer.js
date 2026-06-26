@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 색채 파라미터 합성 모듈
  * @module emotion-engine/param-synthesizer
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * PIPELINE STAGE 3 : ExtractionResult → GlobalColorParams

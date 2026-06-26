@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 오류 대응 & 폴백 처리 모듈
  * @module emotion-engine/fallback-handler
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * 파이프라인 안전망 (Pipeline Safety Net)

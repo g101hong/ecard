@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 다양성 보증 & 품질 검증 모듈
  * @module emotion-engine/diversity-guard
- * @version 1.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * PIPELINE STAGE 5 : PanelColorParams[] → Validated PanelColorParams[]

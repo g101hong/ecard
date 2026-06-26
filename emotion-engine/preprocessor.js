@@ -1,7 +1,6 @@
 /**
  * @fileoverview 울산 E-Card 감성 분석 엔진 — 입력 전처리 모듈 (v2.0)
  * @module emotion-engine/preprocessor
- * @version 2.0.0
  *
  * ─────────────────────────────────────────────────────────────────
  * PIPELINE STAGE 1 : Raw Input → Slim Preprocessed Context
