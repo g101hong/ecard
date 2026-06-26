@@ -471,47 +471,7 @@ export async function analyzeImpression(rawText, options = {}) {
 }
 
 // =============================================================================
-// ⑤ 단계별 실행 함수 (디버그·테스트용)
-// =============================================================================
-
-export function runStage1(rawText) {
-  return preprocessInput(rawText);
-}
-
-export async function runStage1to2(rawText, visitCtx = null) {
-  const pre = preprocessInput(rawText);
-  const extraction = await withFallback(
-    () => extractEmotions(pre, visitCtx),
-    null,
-    { diversitySeed: pre.diversitySeed, language: pre.language, stage: 'stage2' }
-  );
-  return { pre, extraction };
-}
-
-export function runStage3(extraction, spotIndex) {
-  const idx      = spotIndex ?? extraction.spotIndex ?? 0;
-  const adjusted = { ...extraction, emotionScores: applyEmotionMatrix(idx, extraction.emotionScores) };
-  return synthesizeColorParams(adjusted);
-}
-
-export function quickSynthesize(emotionScores, spotIndex = 0) {
-  const fakeExtraction = {
-    emotionScores,
-    contextAnalysis: {
-      timeContext:      { detected: null },
-      seasonContext:    { detected: null },
-      companionContext: { detected: null },
-    },
-  };
-  const adjusted = {
-    ...fakeExtraction,
-    emotionScores: applyEmotionMatrix(spotIndex, emotionScores),
-  };
-  return synthesizeColorParams(adjusted);
-}
-
-// =============================================================================
-// ⑥ 유효성 검사 유틸리티
+// ⑤ 유효성 검사 · 디버그 (개발·테스트 전용)
 // =============================================================================
 
 export function validateResult(result) {
@@ -555,33 +515,7 @@ export function debugPipeline(result) {
 }
 
 // =============================================================================
-// ⑧ 자주 쓰는 항목 재수출 (Re-exports)
-// =============================================================================
-
-export { SPOTS }                     from './constants/spot-palettes.js';
-export { SPOT_BASE_PALETTES as PANEL_CONFIGS } from './panel-individualizer.js';
-export { FALLBACK_TIER }             from './fallback-handler.js';
-export { preprocessInput }           from './preprocessor.js';
-export { extractEmotions }           from './ai-extractor.js';
-export { synthesizeColorParams }     from './param-synthesizer.js';
-export { individualizePanels as individualizeAllPanels } from './panel-individualizer.js';
-export { guardDiversity }            from './diversity-guard.js';
-export { buildExtendedPalette,
-         getSpotByIndex }            from './constants/spot-palettes.js';
-export { applyEmotionMatrix,
-         getFullPanelConfig }        from './constants/panel-weights.js';
-
-// =============================================================================
 // Default Export
 // =============================================================================
 
-export default {
-  analyzeImpression,
-  runStage1,
-  runStage1to2,
-  runStage3,
-  quickSynthesize,
-  validateResult,
-  debugPipeline,
-  SHORT_CIRCUIT,   // 테스트·모니터링에서 참조 가능하도록 노출
-};
+export default { analyzeImpression };
